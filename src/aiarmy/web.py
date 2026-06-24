@@ -5,7 +5,7 @@ Gradio Web 界面 — 部署入口
 import gradio as gr
 import asyncio
 
-from app.graph import AuditPipeline
+from src.aiarmy.graph import AuditPipeline
 
 
 async def process_document(file, intent: str, use_llm: bool = True) -> str:

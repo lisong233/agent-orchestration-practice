@@ -3,8 +3,8 @@
 汇总所有规则结果，输出最终硬标签 + 依据。
 裁决逻辑用 prompt 铁律实现，不在 Python 里写复杂算法。
 """
-from app.schemas import RuleVerdict, FinalResult
-from app.llm import chat_json
+from src.aiarmy.schemas import RuleVerdict, FinalResult
+from src.aiarmy.llm import chat_json
 
 JUDGE_SYSTEM = """你是电力项目立项的终审专家。给定一份材料在多条规则上的评审结果，
 做出最终"通过/不通过"裁决。

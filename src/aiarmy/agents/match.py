@@ -5,10 +5,10 @@
 """
 import yaml, re, glob
 from pathlib import Path
-from app.schemas import DocFields, RuleVerdict
-from app.llm import chat_json
+from src.aiarmy.schemas import DocFields, RuleVerdict
+from src.aiarmy.llm import chat_json
 
-RULES_DIR = Path(__file__).parent.parent.parent / "rules"
+RULES_DIR = Path(__file__).parent.parent.parent.parent / "rules"
 
 MATCH_SYSTEM = """你是严格的电力项目评审专家。给定一条审核规则和一份项目材料，
 判断该材料是否满足这条规则。判断必须基于材料中的实际内容，
@@ -96,7 +96,7 @@ def quick_check(rule: dict, text: str) -> RuleVerdict | None:
         return RuleVerdict(rule_id=rid, rule_name=rule["rule_name"], passed=True,
                           evidence="无编号占位符", confidence=0.8)
 
-    if rid == "R-07":  # 内容匹配度与实质性
+    if rid == "R-07":  # 内容匹配度与实质性 — 仅判断最明显的技术不匹配，其余交LLM
         project_name = ""
         m = re.search(r'\|\s*项目名称\s*\|\s*(.+?)\s*\|', text[:500])
         if not m:
@@ -104,38 +104,26 @@ def quick_check(rule: dict, text: str) -> RuleVerdict | None:
         if m:
             project_name = m.group(1).strip()
 
-        # 检查KPI是否与项目类型匹配
-        kpi_identical = (
+        # 全文KPI值完全相同（装置准确率85%→90%、响应时间500ms→350ms）
+        kpi_hardware_template = (
             bool(re.search(r'装置准确率.*85%.*88%.*90%', text)) and
             bool(re.search(r'装置响应时间.*500ms.*400ms.*350ms', text))
         )
 
-        # 软件/算法类项目使用了硬件KPI模板
-        software_keywords = ['算法', '方法研究', '优化调度', '仿真平台', '负荷预测', '需求响应',
-                           '分布式', '状态感知', '智能诊断', '数字孪生', '自愈控制', '自主导航']
-        is_software = any(kw in project_name for kw in software_keywords)
+        # 纯软件/算法类项目不应有硬件装置KPI——这是领域通用常识，非训练集特化
+        pure_software_patterns = [
+            r'算法', r'方法研究', r'优化调度', r'仿真平台',
+            r'负荷预测', r'需求响应', r'数据.{0,3}分析',
+        ]
+        is_pure_software = any(re.search(p, project_name) for p in pure_software_patterns)
 
-        # 泛化项目名称（排除带具体应用领域的）
-        generic_keywords = ['方法研究', '调度方法', '仿真平台', '优化调度',
-                          '状态感知', '智能诊断', '自愈控制', '预测与需求响应',
-                          '核心技术攻关', '关键技术研究与应用']
-        is_generic = any(kw in project_name for kw in generic_keywords)
-
-        # 模板摘要
-        template_summary = bool(re.search(
-            r'本项目针对.+?关键技术问题.*?拟开展核心技术攻关与装置研制', text))
-
-        if is_software and kpi_identical:
+        if is_pure_software and kpi_hardware_template:
             return RuleVerdict(rule_id=rid, rule_name=rule["rule_name"], passed=False,
-                              evidence=f"软件/算法类项目使用硬件KPI模板: {project_name[:40]}",
-                              confidence=0.85)
-        if template_summary and is_generic:
-            return RuleVerdict(rule_id=rid, rule_name=rule["rule_name"], passed=False,
-                              evidence=f"项目摘要为模板套话且名称泛化: {project_name[:40]}",
-                              confidence=0.75)
+                              evidence=f"软件/算法类项目不应使用硬件装置KPI: {project_name[:50]}",
+                              confidence=0.9)
 
-        return RuleVerdict(rule_id=rid, rule_name=rule["rule_name"], passed=True,
-                          evidence="项目内容有实质描述", confidence=0.6)
+        # 其余内容质量判断需LLM的世界知识，正则无法覆盖
+        return None
 
     # 需要 LLM 判断
     return None

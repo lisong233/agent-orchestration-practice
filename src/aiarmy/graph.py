@@ -6,7 +6,7 @@ import asyncio
 from dataclasses import dataclass, field
 from typing import Optional
 
-from app.schemas import DocFields, RuleVerdict, FinalResult, DocType
+from src.aiarmy.schemas import DocFields, RuleVerdict, FinalResult, DocType
 
 
 @dataclass
@@ -66,16 +66,16 @@ class AuditPipeline:
         return state
 
     async def _parse(self, raw_text: str, intent: str) -> DocFields:
-        from app.agents.parse import run
+        from src.aiarmy.agents.parse import run
         return await run(raw_text, intent, use_llm=self.use_llm)
 
     async def _match(self, fields: DocFields, intent: str) -> list[RuleVerdict]:
-        from app.agents.match import run
+        from src.aiarmy.agents.match import run
         return await run(fields, intent, use_llm=self.use_llm)
 
     async def _judge(self, verdicts: list[RuleVerdict], title: str,
                      intent: str) -> FinalResult:
-        from app.agents.judge import run
+        from src.aiarmy.agents.judge import run
         return await run(verdicts, title, intent, use_llm=self.use_llm)
 
 

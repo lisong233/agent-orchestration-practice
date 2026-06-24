@@ -5,8 +5,8 @@
 支持 LLM 模式和纯正则模式。
 """
 import re
-from app.schemas import DocFields, DocType
-from app.llm import chat_json
+from src.aiarmy.schemas import DocFields, DocType
+from src.aiarmy.llm import chat_json
 
 PARSE_SYSTEM = """你是电力行业项目申报材料的信息抽取专家。从文档中抽取结构化字段，
 只抽取文档中真实存在的内容，绝不编造。缺失的字段填 null。"""
