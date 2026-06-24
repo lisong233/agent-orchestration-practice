@@ -6,6 +6,7 @@ import gradio as gr
 import asyncio
 
 from src.aiarmy.graph import AuditPipeline
+from src.aiarmy.io import to_text
 
 
 async def process_document(file, intent: str, use_llm: bool = True) -> str:
@@ -13,14 +14,17 @@ async def process_document(file, intent: str, use_llm: bool = True) -> str:
     if file is None:
         return "⚠️ 请先上传文档"
 
-    # 读取文件内容
+    # 获取文件路径
     if hasattr(file, "name"):
         path = file.name
     else:
         path = str(file)
 
-    with open(path, encoding="utf-8", errors="replace") as f:
-        raw_text = f.read()
+    # 通过 io 层读取（自动处理 .docx/.doc/.pdf/.txt）
+    try:
+        raw_text = to_text(path)
+    except Exception as e:
+        return f"❌ 文件读取失败: {e}"
 
     if not raw_text.strip():
         return "⚠️ 文件内容为空"

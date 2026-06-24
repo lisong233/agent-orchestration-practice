@@ -65,14 +65,14 @@ def extract_features(text: str, filename: str):
 
     # 审批签章
     f["has_approval_opinion"] = bool(re.search(r'(申请部门.*意见|科技管理部门.*意见).*:', text))
-    f["approval_has_date"] = bool(re.search(r'(?:2026|2025).*年.*月.*日', text))
-    f["approval_date_count"] = len(re.findall(r'2026年\d{1,2}月\d{1,2}日', text))
+    f["approval_has_date"] = bool(re.search(r'\d{4}.*年.*月.*日', text))
+    f["approval_date_count"] = len(re.findall(r'\d{4}年\d{1,2}月\d{1,2}日', text))
 
     # 承诺书
     f["has_commitment"] = bool(re.search(r'廉洁及科研诚信承诺书', text))
     commitment_signed = re.search(r'项目负责人[：:]\s*(\S+)', text)
     f["commitment_signed"] = bool(commitment_signed and commitment_signed.group(1) not in ['', '：', ':'])
-    f["commitment_has_date"] = bool(re.search(r'日期[：:]\s*2026', text))
+    f["commitment_has_date"] = bool(re.search(r'日期[：:]\s*\d{4}', text))
 
     # 项目编号
     f["has_project_number"] = bool(re.search(r'项目编号.*\d{4,}', text))

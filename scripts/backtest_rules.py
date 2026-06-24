@@ -38,7 +38,8 @@ def apply_rule(rule, text, doc_type):
     if rid == "R-01":  # 审批签章完整性
         has_dept = bool(re.search(r'申请部门.*?意见[：:]\s*\n?\s*经审核', text, re.DOTALL))
         has_tech = bool(re.search(r'(?:直属单位)?科技管理部门意见[：:]\s*\n?\s*经审核', text, re.DOTALL))
-        has_date = bool(re.search(r'2026年\d{1,2}月\d{1,2}日', text))
+        # 通用日期匹配，不锁定年份
+        has_date = bool(re.search(r'\d{4}年\d{1,2}月\d{1,2}日', text))
         if has_date and (has_dept or has_tech):
             return True, "审批意见含日期"
         else:
@@ -46,7 +47,8 @@ def apply_rule(rule, text, doc_type):
 
     elif rid == "R-02":  # 承诺书签署完整性
         signed = bool(re.search(r'项目负责人[：:]\s*\n?\s*\S{2,}', text, re.DOTALL))
-        dated = bool(re.search(r'日期[：:]\s*2026', text))
+        # 通用日期匹配，不锁定年份
+        dated = bool(re.search(r'日期[：:]\s*\d{4}', text))
         if signed and dated:
             return True, "承诺书已签署并注明日期"
         else:
@@ -84,41 +86,25 @@ def apply_rule(rule, text, doc_type):
             return False, f"存在{len(numbered)}个编号占位符成员"
         return True, "无编号占位符"
 
-    elif rid == "R-07":  # 内容匹配度与实质性
-        # 检查KPI是否与项目类型匹配
-        project_name = ""
-        m = re.search(r'项目名称[：:]\s*(.+?)(?:\||$)', text[:500])
-        if m:
-            project_name = m.group(1).strip()
+    elif rid == "R-07":  # 内容匹配度与实质性 — 仅判断结构异常，不匹配具体数值
+        # 检查1：KPI自我重复（多个指标取值完全相同）
+        kpi_values = re.findall(r'(?:[≥≥>]?\s*)?(\d+(?:\.\d+)?)\s*%', text)
+        if len(kpi_values) >= 3:
+            from collections import Counter
+            val_counts = Counter(kpi_values)
+            max_dup = max(val_counts.values())
+            if max_dup >= 3:
+                return False, f"多个考核指标取值完全相同，疑似模板复制填充"
 
-        # 检查是否所有KPI都是"装置准确率/响应时间/可用率"模板值
-        kpi_identical = (
-            bool(re.search(r'装置准确率.*85%.*88%.*90%', text)) and
-            bool(re.search(r'装置响应时间.*500ms.*400ms.*350ms', text)) and
-            bool(re.search(r'系统可用率.*99\.0%.*99\.5%.*99\.9%', text))
-        )
+        # 检查2：全文KPI值比例异常雷同
+        if len(kpi_values) >= 6:
+            from collections import Counter
+            val_counts = Counter(kpi_values)
+            max_dup = max(val_counts.values())
+            if max_dup >= len(kpi_values) * 0.5:
+                return False, f"{len(kpi_values)}个KPI指标中{max_dup}个取值相同，分布异常"
 
-        # 纯软件/算法类项目使用硬件KPI模板 → 内容不匹配
-        software_keywords = ['算法', '方法研究', '优化调度', '仿真平台', '负荷预测', '需求响应',
-                           '分布式', '状态感知', '智能诊断', '数字孪生', '自愈控制', '自主导航']
-        is_software = any(kw in project_name for kw in software_keywords)
-
-        if is_software and kpi_identical:
-            return False, f"软件/算法类项目使用硬件KPI模板，项目名={project_name[:30]}"
-
-        # 检查项目摘要: 如果摘要模式完全匹配模板（"针对XX关键技术问题，拟开展核心技术攻关与装置研制"）
-        # 且项目名称是泛化的研究方向而非具体装置，判定为模板填充
-        template_summary = bool(re.search(r'本项目针对.+?关键技术问题.*?拟开展核心技术攻关与装置研制', text))
-
-        # 泛化项目名称关键词
-        generic_keywords = ['方法研究', '技术研究', '调度方法', '仿真平台', '优化调度',
-                          '状态感知', '智能诊断', '自愈控制', '预测与需求响应']
-        is_generic = any(kw in project_name for kw in generic_keywords)
-
-        if template_summary and is_generic:
-            return False, f"项目摘要为模板套话且项目名称泛化: {project_name[:30]}"
-
-        return True, "项目内容有实质描述"
+        return True, "项目KPI取值无结构异常（语义质量需LLM判断）"
 
     return True, "规则未实现"
 

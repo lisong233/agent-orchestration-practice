@@ -2,12 +2,13 @@
 P2 - 规则发现研究循环 (Research Loop)
 ========================================
 对计划任务书类型文档进行语义级内容质量分析，
-利用 DeepSeek V4 Flash 的世界知识评估项目实质性。
+利用 LLM 的世界知识评估项目实质性。
 
 设计原则：
 - 只用于格式规则无法判别的边界案例（计划任务书）
 - 立项申请书已被 R01-R04 完美覆盖，不需要 LLM
 - 输出结构化 JSON，包含判断依据供人工复核
+- LLM 调用走统一客户端（src/aiarmy/llm.py），全程 anthropic SDK
 
 用法：
   python scripts/discover_rules.py                    # 分析全部计划任务书
@@ -16,7 +17,10 @@ P2 - 规则发现研究循环 (Research Loop)
 """
 import json, os, sys, argparse
 from pathlib import Path
-from openai import OpenAI
+
+# 确保 src 在 Python path 中
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from src.aiarmy.llm import chat_json, get_client
 
 BASE = Path(__file__).parent.parent
 TXT_DIR = BASE / "训练集" / "convert_text"
@@ -105,8 +109,8 @@ def extract_project_info(text: str) -> dict:
     return info
 
 
-def analyze_document(text: str, client: OpenAI = None, dry_run: bool = False) -> dict:
-    """对单篇计划任务书做语义分析"""
+def analyze_document(text: str, backend: str = None, dry_run: bool = False) -> dict:
+    """对单篇计划任务书做语义分析。backend=None 时不调LLM，默认通过。"""
     info = extract_project_info(text)
 
     prompt = USER_PROMPT_TEMPLATE.format(
@@ -125,22 +129,19 @@ def analyze_document(text: str, client: OpenAI = None, dry_run: bool = False) ->
         return {"project_name": info["project_name"], "quality_score": 0,
                 "assessment": "DRY RUN", "red_flags": [], "recommendation": "通过"}
 
-    if client is None:
+    if backend is None:
         return {"project_name": info["project_name"], "quality_score": 3,
-                "assessment": "未配置LLM，默认通过", "red_flags": [], "recommendation": "通过"}
+                "assessment": "未配置LLM后端，默认通过", "red_flags": [], "recommendation": "通过"}
 
     try:
-        resp = client.chat.completions.create(
-            model="deepseek-v4-flash",
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": prompt}
-            ],
-            response_format={"type": "json_object"},
-            temperature=0.1,
+        # 用统一 LLM 客户端，走 Anthropic SDK 兼容端点
+        result = chat_json(
+            system=SYSTEM_PROMPT,
+            user=prompt,
+            model="deepseek-v4-flash" if backend == "deepseek" else "claude-haiku-4-5",
+            backend=backend,
             max_tokens=1000,
         )
-        result = json.loads(resp.choices[0].message.content)
         return result
     except Exception as e:
         print(f"  ⚠️ LLM调用失败: {e}")
@@ -169,15 +170,16 @@ def main():
 
     print(f"找到 {len(taskbook_files)} 篇计划任务书")
 
-    # 初始化 DeepSeek
-    client = None
+    # 初始化 LLM 后端：优先 DeepSeek（便宜），其次 Claude
+    backend = None
     if not args.dry_run:
-        api_key = os.environ.get("DEEPSEEK_API_KEY")
-        if api_key:
-            client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
+        if os.environ.get("DEEPSEEK_API_KEY"):
+            backend = "deepseek"
+        elif os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN"):
+            backend = "claude"
         else:
-            print("⚠️ 未设置 DEEPSEEK_API_KEY 环境变量，将跳过LLM分析")
-            print("   export DEEPSEEK_API_KEY=your_key")
+            print("⚠️ 未设置任何 LLM API key，将跳过LLM分析")
+            print("   设置 DEEPSEEK_API_KEY 或 ANTHROPIC_AUTH_TOKEN")
 
     results = []
     for txt_file, text in taskbook_files:
@@ -185,7 +187,7 @@ def main():
         label = labels.get(filename, "???")
         print(f"\n分析: {filename[:50]}... (标签: {label})")
 
-        result = analyze_document(text, client, args.dry_run)
+        result = analyze_document(text, backend, args.dry_run)
         result["file"] = filename
         result["ground_truth"] = label
         result["predicted"] = result.get("recommendation", "通过")
