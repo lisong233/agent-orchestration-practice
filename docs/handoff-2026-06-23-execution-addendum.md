@@ -1,0 +1,235 @@
+# 执行附录：给 DeepSeek V4 Pro 的关键点补强
+
+> 📅 2026-06-23 · 糯米 编写
+> 🎯 配套 `handoff-2026-06-23.md`（v2 施工蓝图）。本附录只补**最容易卡死弱模型**的三件事：
+>    ① 完整 prompt 模板  ② requirements.txt  ③ 启动 + 验收命令。
+> 📌 三个 agent 节点和 discover_rules 的代码骨架，蓝图 §6 已给方向，由你（V4 Pro）照骨架填实现。
+> 📌 阅读顺序：先读 v2 蓝图全文 → 再读本附录 → 开工。
+
+---
+
+## ⓪ 角色与模型分工（别搞混）
+
+| 角色 | 模型 | 说明 |
+|------|------|------|
+| **写代码的你** | DeepSeek V4 Pro | coding agent，照蓝图实施 |
+| **系统运行时判断** | DeepSeek **V4 Flash** | 代码里 `app/llm.py` 调的是 **flash**，不是 pro。flash 比 pro 便宜约 12 倍，作业级别够用 |
+
+⚠️ 写代码时，`app/llm.py` 里 `model="deepseek-v4-flash"`。**不要**写成 pro——运行时判断量大，用 flash 省钱。
+
+---
+
+## ① 完整 Prompt 模板（系统质量命脉，照抄别自创）
+
+> 弱模型自己写 prompt 容易写垮。以下三个模板**直接抄进代码**，只改占位符 `{...}`。
+> 三个 prompt 都要求 JSON 输出，配合 DeepSeek 的 `response_format={"type":"json_object"}`。
+
+### 1.1 解析 Agent（`app/agents/parse.py` 用）
+
+**目的**：把 doc-read 出的 Markdown 压成结构化字段（compact），保留证据原文。
+
+```
+SYSTEM:
+你是电力行业项目申报材料的信息抽取专家。从文档中抽取结构化字段，
+只抽取文档中真实存在的内容，绝不编造。缺失的字段填 null。
+
+USER:
+文档类型：{doc_type}
+文档内容（Markdown，含表格）：
+{raw_markdown}
+
+请抽取以下字段，输出 JSON：
+{
+  "title": "项目名称",
+  "summary": "100字以内的项目核心内容摘要",
+  "fields": {
+    "团队成员": "成员姓名/职称/分工的概述，注意是否有'成员10'这类占位符",
+    "创新点": "技术创新点列表，注意是具体方法论还是空泛套话",
+    "预算明细": "预算是否分项到具体科目和金额，还是笼统大数",
+    "量化指标": "是否有可量化的KPI（准确率/响应时间等）及具体数值",
+    "内容完整度": "文档是否只有封面+承诺书（空模板），还是有完整技术方案"
+  },
+  "raw_excerpt": "与上述判断最相关的2-3段文档原文，供后续引用证据"
+}
+```
+
+### 1.2 规则匹配 Agent（`app/agents/match.py` 用，**逐条规则调用**）
+
+**目的**：拿单条规则 + 文档字段，判断这条规则过不过，给证据。
+
+```
+SYSTEM:
+你是严格的电力项目评审专家。给定一条审核规则和一份项目材料，
+判断该材料是否满足这条规则。判断必须基于材料中的实际内容，
+引用原文作为证据。宁可严格，不要放水——大多数申报材料是不达标的。
+
+USER:
+【审核规则】
+规则ID：{rule_id}
+规则名称：{rule_name}
+说明：{description}
+通过标准：{criteria_pass}
+不通过标准：{criteria_fail}
+参考示例：{few_shot}
+
+【待评审材料】
+项目：{title}
+关键字段：{fields}
+原文片段：{raw_excerpt}
+
+请判断该材料是否满足这条规则，输出 JSON：
+{
+  "rule_id": "{rule_id}",
+  "rule_name": "{rule_name}",
+  "passed": true 或 false,
+  "evidence": "引用材料中支持你判断的具体原文",
+  "confidence": 0.0到1.0之间的数值
+}
+```
+
+### 1.3 综合裁决 Agent（`app/agents/judge.py` 用）
+
+**目的**：汇总所有规则结果，出最终硬标签 + 依据。**裁决逻辑已定死，别自创**。
+
+```
+SYSTEM:
+你是电力项目立项的终审专家。给定一份材料在多条规则上的评审结果，
+做出最终"通过/不通过"裁决。
+
+裁决铁律（必须遵守）：
+1. 任何一条 confidence≥0.7 的关键规则不通过 → 最终"不通过"
+2. 若所有规则都通过 → "通过"
+3. 存在低置信度（confidence<0.7）的不通过 → 综合权衡，但倾向从严
+4. 记住：本领域大多数材料是"不通过"的，通过的是少数高质量材料
+
+USER:
+项目：{title}
+意图：{intent}
+各规则评审结果：
+{verdicts_json}
+
+请输出最终裁决 JSON：
+{
+  "label": "通过" 或 "不通过",
+  "matched_rules": [
+    {"rule_id": "...", "rule_name": "...", "evidence": "..."}
+  ],
+  "reason": "150字以内的最终判断说明，说清楚为什么通过/不通过"
+}
+```
+
+> ⚠️ 裁决逻辑用 **prompt 内的铁律**实现，不要在 Python 里写复杂加权算法。
+> 这对应蓝图 §6 留的"加权/优先级二选一"——**默认就用上面这套 prompt 铁律**，简单可靠。
+
+---
+
+## ② requirements.txt（直接创建这个文件）
+
+```
+langgraph>=0.4
+gradio>=5.0
+openai>=1.50          # 调 DeepSeek 用 OpenAI 兼容 SDK
+pydantic>=2.0
+pyyaml>=6.0
+pandas>=2.0           # 读标签 xlsx
+openpyxl>=3.1         # pandas 读 xlsx 后端
+python-dotenv>=1.0    # 读 .env 里的 DEEPSEEK_API_KEY
+```
+
+> doc-read 是已装好的外部 CLI（不在 requirements 里，直接 subprocess 调）。
+> LibreOffice 是系统级依赖（Docker 里 apt 装，见蓝图 §7 Dockerfile）。
+
+---
+
+## ③ 启动 + 验收命令（每步都有期望输出，知道"算不算做完"）
+
+### 3.0 环境准备
+```bash
+cd d:/ClaudeWorkspace/agent-learning/AiArmy
+python -m venv .venv
+.venv/Scripts/activate          # Windows
+pip install -r requirements.txt
+echo "DEEPSEEK_API_KEY=你的key" > .env
+```
+**验收**：`pip list | grep langgraph` 能看到 langgraph。
+
+### 3.1 P1 数据准备
+```bash
+# .doc 转 .docx
+python scripts/convert_docs.py
+# 期望：训练集_docx/ 下出现 10 个新 .docx（原来就是 .docx 的不用转）
+
+# 全量结构化
+python scripts/parse_all.py
+# 期望：data/parsed/ 下出现 20 个 .json，每个含 title/summary/fields/raw_excerpt
+# 验收：随便打开一个 json，fields 里的"团队成员""创新点"有内容，不是 null
+```
+
+### 3.2 P2 规则发现（人工确认 checkpoint）
+```bash
+python scripts/discover_rules.py
+# 期望：rules/计划任务书/ 和 rules/立项申请书/ 下生成若干 .yaml 规则草稿
+# ★人工 review：打开 yaml，确认规则合理（不是过拟合到某个样本的表面特征）
+# 验收：每条规则有 intent_keywords / criteria / few_shot 三块
+```
+
+### 3.3 P3 单文档跑通
+```bash
+# 写个临时测试：喂一个已知"不通过"的文档
+python -c "
+from app.graph import build_graph
+g = build_graph()
+import json
+r = g.invoke({'raw_doc': open('data/parsed/某文档.json',encoding='utf-8').read(),
+              'doc_type': '计划任务书', 'intent': '判断创新程度是否足够'})
+print(json.dumps(r['result'], ensure_ascii=False, indent=2))
+"
+# 期望：输出含 label/matched_rules/reason 的 JSON
+# 验收：label 和训练集真实标签一致（先拿已知答案的样本验）
+```
+
+### 3.4 P4 Web 启动
+```bash
+python -m app.web
+# 期望：终端打印 Running on local URL: http://0.0.0.0:7860
+# 验收：浏览器开 localhost:7860，能看到 选类型/上传/输intent/运行 四个控件
+```
+
+### 3.5 P5 全量回测
+```bash
+python eval/backtest.py
+# 期望：打印 20 个样本的预测 vs 真实标签 + 混淆矩阵 + F1/Precision/Recall
+# 验收：少数类（"通过"）的 Recall 别太低（4个通过样本至少对2-3个）
+```
+
+### 3.6 P6 Docker 部署（见蓝图 §7，命令照抄）
+
+---
+
+## ④ 给 V4 Pro 的避坑清单
+
+| 坑 | 正确做法 |
+|----|---------|
+| base_url 写成 `https://api.deepseek.com/v1` | 用 `https://api.deepseek.com`（不加 /v1，否则变 /v1/v1） |
+| 运行时模型写成 v4-pro | 用 `deepseek-v4-flash`（pro 留给你写代码，flash 给系统跑） |
+| 自己写 prompt | 抄本附录 ① 的三个模板，只改占位符 |
+| judge 写复杂加权算法 | 用 ①.3 的 prompt 铁律，Python 不写裁决逻辑 |
+| 用向量库做规则检索 | 用 router.py 的关键词匹配（蓝图 §6.4），规则就几十条不需要向量库 |
+| `.doc` 直接喂 doc-read | 先 LibreOffice 转 `.docx`（doc-read 读不了 .doc） |
+| 解析丢了表格 | doc-read 底层是 OfficeCLI，输出含 Markdown 表格，别用纯文本工具重抽 |
+| 字段抽取时编造内容 | parse prompt 已强调"缺失填 null，绝不编造"，照抄 |
+
+---
+
+## ⑤ 实施顺序（一句话）
+
+```
+建环境 → 抄 requirements → P1数据 → 写3个agent(照§6骨架+本附录prompt)
+   → 写discover_rules → P2规则(人工确认) → P3跑通 → P4网页 → P5回测 → P6部署
+```
+
+地基是 P1+P2。先把数据和规则搞定，再写 app/ 代码。
+
+---
+
+> *糯米 2026-06-23 · 这份只补关键点。三个 agent 的函数体靠你照骨架填，但 prompt 别自创，抄这里的喵~*

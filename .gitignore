@@ -9,6 +9,9 @@ venv/
 .vscode/
 .idea/
 
+# Data
+训练集/
+
 # Temp
 *.tmp
 .DS_Store
