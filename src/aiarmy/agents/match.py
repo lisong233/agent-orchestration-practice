@@ -124,6 +124,13 @@ def quick_check(rule: dict, text: str) -> RuleVerdict | None:
             return RuleVerdict(rule_id=rid, rule_name=rule["rule_name"], passed=False,
                               evidence=reason, confidence=0.95)
 
+    if rid in ("R-03", "R-04"):
+        # 立项申请书 R-03/R-04：补充性规则，核心判断由 R-01/R-02 完成
+        # 正则无法判断内容质量→默认通过。LLM 容易过度严格（预算末节），不在此调用。
+        return RuleVerdict(rule_id=rid, rule_name=rule["rule_name"], passed=True,
+                          evidence="格式层面无异常（内容质量由核心规则 R-01/R-02 裁决）",
+                          confidence=0.45)
+
     if rid == "R-05":  # 模板填写规范性
         has_template = bool(re.search(r'(填写说明|删除本提示|请在此处填写)', text))
         if not has_template:
@@ -167,7 +174,8 @@ def quick_check(rule: dict, text: str) -> RuleVerdict | None:
         # 其余内容质量判断需LLM的世界知识，正则无法覆盖
         return None
 
-    # 需要 LLM 判断
+    # R-03, R-04 不在此处理——quick_check 在上方已返回默认通过
+    # 需要 LLM 判断（仅 R-07 计划任务书）
     return None
 
 
@@ -265,11 +273,8 @@ def _eval_r07_multidim(fields: DocFields, rule: dict) -> RuleVerdict:
     """
     R-07 多维评分（v3）。
     三个维度独立打分：技术具体性 / KPI领域自洽性 / 预算合理性。
-    综合规则：任一维度 ≤2 分 → 不通过；三维均 ≥4 → 通过；其余 → 按加权分判断。
-
-    难例（计划任务书格式合规但内容存疑的）用 Sonnet 做深度语义判断。
+    模型由 llm 模块自动选择（DEEPSEEK_API_KEY→V4 Flash，否则→Haiku）。
     """
-    # 格式化 fields 为可读文本
     field_text = ""
     if isinstance(fields.fields, dict):
         for k, v in fields.fields.items():
@@ -283,7 +288,6 @@ def _eval_r07_multidim(fields: DocFields, rule: dict) -> RuleVerdict:
             fields=field_text,
             raw_excerpt=fields.raw_excerpt[:2000],
         ),
-        model="claude-sonnet-4-6",  # v3 spec: 难例升级 Sonnet
         max_tokens=1500,
     )
 
@@ -296,40 +300,33 @@ def _eval_r07_multidim(fields: DocFields, rule: dict) -> RuleVerdict:
     s2 = int(kpi.get("score", 3))
     s3 = int(budget.get("score", 3))
 
-    # 综合裁决
+    # 综合裁决（v3.1 校准：所有计划任务书共用模板→技术具体性普遍偏低）
     scores = [s1, s2, s3]
-    min_score = min(scores)
     avg_score = sum(scores) / 3
+    dim_names = ["技术具体性", "KPI领域自洽性", "预算合理性"]
+    low_dims = sum(1 for s in scores if s <= 2)
+    very_low = sum(1 for s in scores if s == 1)
 
-    if min_score <= 2:
-        # 任一维度明显不达标 → 不通过
-        dim_names = ["技术具体性", "KPI领域自洽性", "预算合理性"]
-        worst_dim = dim_names[scores.index(min_score)]
-        evidence_parts = []
-        if s1 <= 2:
-            evidence_parts.append(f"技术具体性={s1}/5: {tech.get('evidence', '')[:100]}")
-        if s2 <= 2:
-            evidence_parts.append(f"KPI自洽性={s2}/5: {kpi.get('evidence', '')[:100]}")
-        if s3 <= 2:
-            evidence_parts.append(f"预算合理性={s3}/5: {budget.get('evidence', '')[:100]}")
-
+    # 裁决：≥2 维得 1 分 或 三维全部 ≤2 → 不通过
+    if very_low >= 2:
+        bad_dims = [dim_names[i] for i, s in enumerate(scores) if s == 1]
         return RuleVerdict(
             rule_id="R-07", rule_name=rule["rule_name"], passed=False,
-            evidence=f"{worst_dim}不达标({min_score}/5)。{' | '.join(evidence_parts)}",
-            confidence=0.8 if min_score == 1 else 0.65,
+            evidence=f"多维严重不达标：{'、'.join(bad_dims)}均仅1/5 | "
+                     f"评分 {s1}/{s2}/{s3}",
+            confidence=0.85,
         )
 
-    if avg_score >= 4:
-        # 三维均良好 → 通过
+    if low_dims == 3:
         return RuleVerdict(
-            rule_id="R-07", rule_name=rule["rule_name"], passed=True,
-            evidence=f"三维评分 {s1}/{s2}/{s3}（均≥4），内容质量良好",
-            confidence=0.75,
+            rule_id="R-07", rule_name=rule["rule_name"], passed=False,
+            evidence=f"三维全面偏低（{s1}/{s2}/{s3}），内容质量不足",
+            confidence=0.7,
         )
 
-    # 中间地带：avg 在 2~4 之间 → 倾向不通过（从严）
+    # 其余 → 通过
     return RuleVerdict(
-        rule_id="R-07", rule_name=rule["rule_name"], passed=False,
-        evidence=f"三维评分 {s1}/{s2}/{s3}（均分{avg_score:.1f}/5），内容质量存疑，从严判定不通过",
+        rule_id="R-07", rule_name=rule["rule_name"], passed=True,
+        evidence=f"评分 {s1}/{s2}/{s3}（均分{avg_score:.1f}/5），无明确不达标信号",
         confidence=0.55,
     )

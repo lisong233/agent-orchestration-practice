@@ -1,31 +1,56 @@
 """
 LLM 客户端封装 — 统一使用 Anthropic Messages API。
-支持双后端：
-  - claude: 默认，复用 ANTHROPIC_AUTH_TOKEN（Claude Code 的 key）
-  - deepseek: DeepSeek Anthropic 兼容端点（api.deepseek.com/anthropic）
 
-运行时判断量大 → 走便宜的 deepseek flash/claude-haiku
-离线规则发现/难例分析 → 走强的 claude sonnet/opus
+后端选择（优先级）：
+  1. DEEPSEEK_API_KEY 已设 → deepseek + deepseek-v4-flash（最便宜）
+  2. 否则 → claude + claude-haiku-4-5（Claude Code 自带 key）
 
-全程只用一个 SDK（anthropic），不引入 openai 冗余依赖。
+所有 agent 直接调 chat_json/chat_text，不自己判断后端——统一由此模块决定。
 """
 import os, json, re
+from pathlib import Path
 from anthropic import Anthropic
 
+# ── 自动加载 .env（优先）或 .env.example ──
+def _load_dotenv():
+    """简易 .env 加载，不依赖 python-dotenv"""
+    for name in [".env", ".env.example"]:
+        env_file = Path(__file__).parent.parent.parent.parent / name
+        if not env_file.exists():
+            env_file = Path.cwd() / name
+        if env_file.exists():
+            with open(env_file, encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith("#") and "=" in line:
+                        k, v = line.split("=", 1)
+                        k, v = k.strip(), v.strip()
+                        if k not in os.environ:
+                            os.environ[k] = v
+            break  # 只加载找到的第一个
 
-def get_client(backend: str = "claude") -> Anthropic:
+_load_dotenv()
+
+# ── 模块级配置：后端 + 模型自动检测 ──
+_BACKEND = "claude"
+_MODEL = "claude-haiku-4-5"
+
+if os.environ.get("DEEPSEEK_API_KEY"):
+    _BACKEND = "deepseek"
+    _MODEL = "deepseek-v4-flash"
+
+
+def get_client(backend: str | None = None) -> Anthropic:
     """
-    获取 LLM 客户端。
-    backend="claude" → Anthropic 原生端点（ANTHROPIC_AUTH_TOKEN）
-    backend="deepseek" → DeepSeek Anthropic 兼容端点（DEEPSEEK_API_KEY）
+    获取 LLM 客户端。不传参则用模块级自动检测的后端。
     """
+    backend = backend or _BACKEND
     if backend == "deepseek":
         api_key = os.environ.get("DEEPSEEK_API_KEY")
         if not api_key:
             raise RuntimeError("未设置 DEEPSEEK_API_KEY 环境变量")
         return Anthropic(api_key=api_key, base_url="https://api.deepseek.com/anthropic")
 
-    # 默认 Claude
     api_key = os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")
     if not api_key:
         raise RuntimeError("未设置 ANTHROPIC_API_KEY 或 ANTHROPIC_AUTH_TOKEN")
@@ -68,15 +93,15 @@ def _get_text(resp) -> str:
 def chat_json(
     system: str,
     user: str,
-    model: str = "claude-haiku-4-5",
-    backend: str = "claude",
+    model: str | None = None,
+    backend: str | None = None,
     temperature: float = 0.1,
     max_tokens: int = 2000,
 ) -> dict:
-    """发送 chat 请求并返回 JSON 解析结果"""
+    """发送 chat 请求并返回 JSON 解析结果。model/backend 不传则用模块默认。"""
     client = get_client(backend)
     resp = client.messages.create(
-        model=model,
+        model=model or _MODEL,
         max_tokens=max_tokens,
         temperature=temperature,
         system=system,
@@ -89,15 +114,15 @@ def chat_json(
 def chat_text(
     system: str,
     user: str,
-    model: str = "claude-haiku-4-5",
-    backend: str = "claude",
+    model: str | None = None,
+    backend: str | None = None,
     temperature: float = 0.1,
     max_tokens: int = 2000,
 ) -> str:
     """发送 chat 请求并返回纯文本"""
     client = get_client(backend)
     resp = client.messages.create(
-        model=model,
+        model=model or _MODEL,
         max_tokens=max_tokens,
         temperature=temperature,
         system=system,

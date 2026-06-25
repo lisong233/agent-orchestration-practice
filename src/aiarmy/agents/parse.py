@@ -117,12 +117,16 @@ async def run(raw_text: str, intent: str = "", use_llm: bool = True) -> DocField
                 raw_markdown=text,
             ),
         )
+        # raw_excerpt 必须保留全文供规则引擎检查（审批签章/承诺书在文档末尾）
+        # LLM 提取的关键原文存入 fields["关键原文"]
+        fields = result.get("fields", {})
+        fields["关键原文"] = result.get("raw_excerpt", "")
         return DocFields(
             doc_type=doc_type,
             title=result.get("title", ""),
             summary=result.get("summary", ""),
-            fields=result.get("fields", {}),
-            raw_excerpt=result.get("raw_excerpt", ""),
+            fields=fields,
+            raw_excerpt=raw_text,  # 全文！规则引擎需要搜索审批签章
         )
     except Exception as e:
         return quick_extract(raw_text, doc_type)
