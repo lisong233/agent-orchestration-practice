@@ -38,11 +38,15 @@ class FinalResult(BaseModel):
 
 
 class PipelineState(BaseModel):
-    """LangGraph 管线状态"""
+    """LangGraph 管线状态 — Pydantic 模型，StateGraph 节点间流转"""
     raw_text: str = ""
     doc_type: Optional[DocType] = None
     intent: str = "综合评审"
     fields: Optional[DocFields] = None
-    verdicts: list[RuleVerdict] = []
+    verdicts: list[RuleVerdict] = Field(default_factory=list)
     result: Optional[FinalResult] = None
     error: Optional[str] = None
+    # 管线控制（非业务字段，节点函数需要访问）
+    use_llm: bool = True
+    verbose: bool = True
+    doc_type_override: Optional[str] = None
