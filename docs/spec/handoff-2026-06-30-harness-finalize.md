@@ -1,0 +1,431 @@
+# 施工蓝图 v4 — Harness 收尾 + 盲点修复 + 部署
+
+> 📅 2026-06-30 · 糯米（Opus，指导）编写
+> 🎯 给下一个执行 session 的命令。**决策已做完，照着干，不留白。** 执行模型默认 deepseek-v4-flash（弱），难例显式调 deepseek-v4-pro（强）。
+> 📌 阅读顺序：先读本文件全文 → 读 `docs/status/2026-06-25-data-truth-and-state.md`（数据真相）→ 读 `docs/spec/handoff-2026-06-24-rule-redesign.md`（v3 方法论，仍有效）→ 开工。
+> 📌 本文件是 v4，在 v3 基础上：①收尾 5 项已知问题 ②补 v3 漏掉的 harness 盲点 ③给出部署路径。**v3 的方法论（正则判结构/LLM判语义/禁指纹）不变，照旧遵守。**
+
+---
+
+## ⓪ 背景与定位（一句话）
+
+「AI 军团」作业：评委在网页上**选类型 + 上传文档 + 输 intent** → 系统输出硬标签（通过/不通过）+ 命中规则 + 依据。
+
+**当前状态**：业务逻辑（规则体系 / 结构语义二分 / 三层裁决）已成型，诚实基线 68.4%（纯规则）。本轮**不碰业务判断逻辑**，只做两件事：
+1. **把 harness（脚手架）做对**——所有我们能控制、能观测的工程环节做到无盲点。
+2. **部署上线**——拿到公网 URL（题目硬要求，无 URL 直接判废）。
+
+**核心认知**：训练集标签对计划任务书是噪声（见数据真相报告），刷训练集分数=过拟合。隐藏集不给我们。所以**部署后我们无法观测准确率**——这意味着 harness 必须在上线前就做对，因为上线后没有第二次机会调。本轮做完，剩下的性能只能交给「模型能力 + harness 质量」，我们不再有观测窗口。
+
+---
+
+## ① 最高铁律（违反即推翻，全部继承自 v3）
+
+1. **禁止训练集指纹**：不写死任何具体 KPI 数值（`85%/90%/500ms`）、年份（`2026年`）、训练集项目名。自检标准：把规则拿到「同类型但内容/年份/KPI 全不同」的新文档上，还能正确工作吗？不能→是指纹→删。
+2. **诚实基线不许造假**：68.4% 是真起点。**严禁为了刷训练集分数回头加指纹。** 宁可训练集错，不可过拟合。
+3. **正则判结构，LLM 判语义**：正则只描述判断维度（在场性/模板残留/占位符/自我重复），绝不匹配具体表面值。LLM 判抽象维度（内容质量/领域自洽），prompt 里不准出现训练集具体例子。
+4. **文档与代码必须一致**：design.md/README.md 写了的功能，代码必须真兑现；代码没做的，文档不许宣称。（v3 遗留：design 说"难例走 Sonnet"，代码没调——本轮修，见任务 4。）
+
+---
+
+## ② 环境与模型（执行前必读，避免指错）
+
+- **LLM 客户端**：`src/aiarmy/llm.py`，全程 Anthropic SDK，直连 DeepSeek 兼容端点 `https://api.deepseek.com/anthropic`，读 `DEEPSEEK_API_KEY`。
+- **模型档位**（DeepSeek 真实模型名，不是 Claude 映射名）：
+  - 弱（默认，运行时量大）：`deepseek-v4-flash` —— `llm.py` 的 `_MODEL`
+  - 强（难例/规则发现）：`deepseek-v4-pro` —— 需在调用处**显式传 `model="deepseek-v4-pro"`**
+- **文档解析**：开发环境 `doc-read` CLI；Docker 环境 `python-docx` 兜底（只支持 .docx，见任务 J）。
+- **本机 Python**：日用 `python`（D:\Work\Python\python3.14），可自由 pip install 临时库。
+
+---
+
+## ③ 任务清单（按依赖顺序，逐条带验收，做完打勾）
+
+> 顺序原则：**安全 → harness 修正 → 鲁棒性 → 验证 → 部署**。P1（harness 修正）是「确认方向对」的收尾，必须在 P4（部署）前全做完。P2 按性价比做，P3 验证是部署前唯一能验证方向的手段。
+
+---
+
+### 🔒 P0 — 安全（立即，第一件事）
+
+#### 任务 0：`.env.example` 占位符化 + 屏蔽 `.env`
+
+**现状（错）**：`.env.example` 第 1 行是真实 key `DEEPSEEK_API_KEY=sk-eacfe9c9...`。此文件已被 git 追踪，随源码/zip 交付给评委 = 主动交出真 key。
+
+**改法**：
+1. `.env.example` 内容改为占位符：
+   ```
+   # 复制本文件为 .env 并填入真实 key（.env 不进 git）
+   DEEPSEEK_API_KEY=sk-your-key-here
+   ```
+2. `.gitignore` 末尾追加一行：
+   ```
+   .env
+   ```
+3. 真 key 只写进 `.env`（本地，不追踪）。
+
+**验收**：
+- [ ] `git ls-files | grep "\.env"` 只出现 `.env.example`，且其内容无真实 key
+- [ ] `.env`（含真 key）存在于本地但 `git status` 不显示它
+- [ ] 提醒主人：旧 key 已进 git 历史，是否轮换由主人决定（不替主人做）
+
+---
+
+### 🛠 P1 — Harness 修正（部署前必须全做完）
+
+#### 任务 1【根本盲点 A】：文档类型由评委 UI 选择，不靠系统猜 ⭐最高优先
+
+**为什么**：题目网页要求第 1 条明确「评委选择数据集类型」——类型是**输入**不是**推断**。当前 `detect_doc_type` 靠关键词猜 + 默认兜底立项申请书，是整个系统的分流总闸，猜错则规则集全加载错。把确定信号变不确定推断，纯亏。
+
+**改法**：
+
+1. `src/aiarmy/web.py` — 加类型选择控件（放在 file_input 上方）：
+   ```python
+   dataset_type = gr.Radio(
+       choices=["计划任务书", "立项申请书"],
+       label="数据集类型（评委选择）",
+       value="立项申请书",
+   )
+   ```
+   `submit_btn.click` 的 `inputs` 加入 `dataset_type`，`process_document` 签名加 `dataset_type: str` 参数。
+
+2. `process_document` 把类型透传给管线：
+   ```python
+   state = await pipeline.run(raw_text, intent, doc_type_override=dataset_type)
+   ```
+
+3. `src/aiarmy/graph.py` — `AuditPipeline.run` 加 `doc_type_override: str | None = None`，透传给 `_parse`。
+
+4. `src/aiarmy/agents/parse.py` — `run` 加 `doc_type_override: str | None = None`：
+   ```python
+   async def run(raw_text, intent="", use_llm=True, doc_type_override=None):
+       if doc_type_override:
+           doc_type = DocType(doc_type_override)   # 评委选的，优先
+       else:
+           doc_type = detect_doc_type(raw_text)    # 降级为兜底（回测/CLI 用）
+   ```
+   `detect_doc_type` **保留**（backtest 和命令行无 UI 时仍需自动判别），但 UI 路径不再依赖它。
+
+**验收**：
+- [ ] 浏览器上有「计划任务书 / 立项申请书」单选，评委选什么就按什么分流
+- [ ] 选「计划任务书」时只加载 `rules/计划任务书/*`，选「立项申请书」时只加载 `rules/立项申请书/*`
+- [ ] `backtest.py`（无 UI）仍能靠 `detect_doc_type` 自动跑通
+
+---
+
+#### 任务 2【第 4 条】：Web 输出对齐题目 JSON 格式
+
+**为什么**：题目输出范例要求每条含 `id` 和 `dataset_type`。当前 `web.py` 输出字段是 `label/title/doc_type/intent/...`，缺 `id`，字段名 `doc_type` ≠ 题目的 `dataset_type`。design.md 第 4 节抄对了格式，但代码没照做。
+
+**改法**：`web.py` 的 `output` dict 调整为题目格式：
+```python
+import os
+output = {
+    "id": os.path.splitext(os.path.basename(path))[0],   # 单文件用文件名做 id
+    "dataset_type": dataset_type,                         # 评委选的类型
+    "intent": state.intent,
+    "label": state.result.label,
+    "matched_rules": state.result.matched_rules,
+    "reason": state.result.reason,
+    "verdicts": [...],   # 保留，作为评委可见的判断过程（加分项）
+}
+return output   # ← 直接返回 dict，不要 json.dumps 成字符串（gr.JSON 期望 dict）
+```
+
+**验收**：
+- [ ] 输出 JSON 含 `id`、`dataset_type`、`intent`、`label`、`matched_rules`、`reason`，字段名与题目范例一致
+- [ ] `gr.JSON` 组件渲染为结构化 JSON，不是转义字符串
+- [ ] `matched_rules` 每项含 `rule_id`/`rule_name`/`evidence`（题目范例要求）
+
+> 单文件先行，**批量上传本轮不做**（主人确认）。但 `id` 用文件名这个设计为日后批量留好了接口。
+
+---
+
+#### 任务 3【第 2 条】：R-07 难例显式走强模型
+
+**为什么**：design.md 宣称"难例走 Sonnet"，但 `_eval_r07_multidim` 调 `chat_json()` 没传 model，吃模块默认 `deepseek-v4-flash`（弱）。文档代码不符（违反铁律 4）。
+
+**改法**：`src/aiarmy/agents/match.py` 的 `_eval_r07_multidim`，给 `chat_json` 显式指定强模型：
+```python
+resp = chat_json(
+    system=R07_MULTIDIM_SYSTEM,
+    user=R07_MULTIDIM_USER.format(...),
+    model="deepseek-v4-pro",   # ← 难例升级强模型
+    max_tokens=1500,
+)
+```
+并把 design.md 技术栈表的「难例模型 claude-sonnet-4-6」改为「deepseek-v4-pro」，与实际一致。
+
+**验收**：
+- [ ] R-07 三维评分调用走 `deepseek-v4-pro`，其余规则保持 `deepseek-v4-flash`
+- [ ] design.md 难例模型描述与代码一致
+
+---
+
+#### 任务 4【第 3 条 + 盲点 N】：统一所有 LLM 不可靠路径的 fallback 方向 = 不通过
+
+**为什么**：少数类是「通过」（~21%），安全侧应是「拿不准就不通过」。但当前 fallback 方向相反、放水通过：
+- `match.py:254` LLM 调用**失败** → `passed=True`（放水）
+- `_eval_r07_multidim` 里 LLM 返回**垃圾 JSON**（`_extract_json` 给 `_parse_error`）→ 三维全取默认 3 → 不触发不通过 → 放水通过
+
+后果：LLM 一挂，计划任务书 R-05/R-06/R-07 全 pass → judge `all_passed` → **全判通过**，准确率崩到 ~20%。
+
+**改法**（两处都要改）：
+
+1. `match.py` 通用 LLM 调用失败分支（约 254 行）：
+   ```python
+   except Exception:
+       result = RuleVerdict(
+           rule_id=rule["rule_id"], rule_name=rule["rule_name"],
+           passed=False, evidence="LLM调用失败，安全侧从严判不通过", confidence=0.5
+       )
+   ```
+
+2. `_eval_r07_multidim` 开头检测解析失败，不给默认分：
+   ```python
+   if resp.get("_parse_error"):
+       return RuleVerdict(
+           rule_id="R-07", rule_name=rule["rule_name"], passed=False,
+           evidence="LLM返回无法解析，安全侧从严判不通过", confidence=0.5,
+       )
+   ```
+   （放在取 tech/kpi/budget 之前。三维默认值 3 仅在「成功解析但某维缺失」时才用。）
+
+**验收**：
+- [ ] 模拟 LLM 抛异常（临时改 key 为错值跑一篇计划任务书），结果是「不通过」不是「通过」
+- [ ] judge 的 fallback（默认不通过）与 match 的 fallback 方向一致，都向「从严」
+
+---
+
+#### 任务 5【盲点 D】：judge 的 matched_rules 从 verdicts 确定性取，不靠 LLM 现编
+
+**为什么**：`judge.py:75` 模糊路径 `matched_rules=resp.get("matched_rules",[])`，让 LLM 重新编命中规则，可能编造 id/漏命中。评分项 3 考「规则语义对齐」，命中规则必须可信。
+
+**改法**：`judge.py` LLM 综合裁决分支，label 和 reason 交 LLM，**matched_rules 从真实 verdicts 取**：
+```python
+resp = chat_json(system=JUDGE_SYSTEM, user=JUDGE_USER.format(...))
+label = resp.get("label", "不通过")
+# matched_rules 确定性来源：不通过时取失败规则，通过时取全部
+source = [v for v in verdicts if not v.passed] if label == "不通过" else verdicts
+return FinalResult(
+    label=label,
+    matched_rules=[{"rule_id": v.rule_id, "rule_name": v.rule_name, "evidence": v.evidence} for v in source],
+    reason=resp.get("reason", ""),
+)
+```
+
+**验收**：
+- [ ] 任何路径下，输出的 `matched_rules` 里的 rule_id 都真实存在于该文档跑过的 verdicts，无 LLM 凭空捏造
+- [ ] reason 仍由 LLM 生成（自然语言说明），matched_rules 为确定性数据
+
+---
+
+#### 任务 6【盲点 I】：结构化日志落盘 — 部署后唯一的观测窗口
+
+**为什么**：上线后我们看不到隐藏集。每次判断的中间过程（类型/各 verdict/置信度/走没走 LLM/最终标签）必须落盘，否则评委跑完我们无任何复盘数据。这是「不可观测」唯一的补救。
+
+**改法**：新建 `src/aiarmy/audit_log.py`，在 `graph.py` 的 `run` 结束处写一行 jsonl：
+```python
+# audit_log.py
+import json, time
+from pathlib import Path
+LOG_PATH = Path(__file__).parent.parent.parent / "logs" / "runs.jsonl"
+def log_run(record: dict):
+    LOG_PATH.parent.mkdir(exist_ok=True)
+    record["ts"] = time.strftime("%Y-%m-%d %H:%M:%S")
+    with open(LOG_PATH, "a", encoding="utf-8") as f:
+        f.write(json.dumps(record, ensure_ascii=False) + "\n")
+```
+`graph.py` run 末尾（return 前）调用，记录：doc_type、title、intent、各 verdict（rule_id/passed/confidence）、最终 label、是否用 llm、error。`.gitignore` 加 `logs/`。
+
+**验收**：
+- [ ] 跑一篇文档后 `logs/runs.jsonl` 出现一行完整记录，含全部中间过程
+- [ ] `logs/` 在 .gitignore 中（不污染仓库）
+- [ ] 日志写入失败不影响主流程（try/except 包裹，静默）
+
+---
+
+### 🧱 P2 — 鲁棒性加固（隐藏集泛化，按性价比做，至少做 7、8）
+
+#### 任务 7【盲点 F】：R-02 签名正则防占位符欺骗
+
+**现状**：`r'项目负责人[：:]\s*\n?\s*\S{2,}'` 会把 `项目负责人：（签字）` 这种占位符判成「已签」。
+
+**改法**：匹配到内容后排除占位符词：
+```python
+m = re.search(r'项目负责人[：:]\s*\n?\s*(\S{2,})', text)
+placeholder = {"（签字）", "(签字)", "签字", "（盖章）", "姓名", "/"}
+signed = bool(m) and m.group(1).strip() not in placeholder
+```
+
+**验收**：
+- [ ] `项目负责人：（签字）` 判为未签 → 不通过
+- [ ] `项目负责人：张三` 判为已签
+
+---
+
+#### 任务 8【盲点 B】：R-07 看得到预算
+
+**现状**：`_eval_r07_multidim` 只喂 `raw_excerpt[:2000]`，预算表常在文档后部，第 3 维（预算合理性）可能看不到内容凭空打分。
+
+**改法**：构造喂给 R-07 的文本时，除前 2000 字，追加预算相关段落（用 parse 已有的关键词定位逻辑）：
+```python
+budget_idx = fields.raw_excerpt.find("经费")
+if budget_idx < 0: budget_idx = fields.raw_excerpt.find("预算")
+excerpt = fields.raw_excerpt[:2000]
+if budget_idx > 2000:
+    excerpt += "\n...\n" + fields.raw_excerpt[budget_idx:budget_idx+800]
+```
+
+**验收**：
+- [ ] R-07 的 raw_excerpt 入参包含预算段落（预算在 2000 字后时）
+
+---
+
+#### 任务 9【盲点 E】：KPI 自我重复正则降低误伤（可选，谨慎）
+
+**风险**：`≥3个相同%值→模板复制`（confidence 0.85）会误伤真有多个相同 KPI 的认真文档（如准确率/可用率都 95%）。这条本身游走在「结构信号」和「指纹」边界。
+
+**取舍**：**保守处理**——不删（它确实抓到了 doc 模板复制），但把 confidence 从 0.85 降到 0.6（降为「软信号」，不再单独触发 judge 的 critical_fail≥0.7 直接否决），让 LLM 三维评分有机会复核。若拿不准就**不动**，记录为已知风险即可。
+
+**验收**：
+- [ ] 若改：KPI 重复不再单独触发 critical 否决，需配合 LLM 评分
+- [ ] 若不改：在本任务下注明「保留，已知误伤风险，留待隐藏集反馈」
+
+---
+
+### ✅ P3 — 验证（部署前做，这是唯一能验证「方向对不对」的手段）
+
+> 准确率无法验证（训练集是噪声），但**方法论稳健性**现在就能验证。这三个测试通过 = 方向对，可以放心部署。
+
+#### 任务 10【核心】：反指纹测试 — 题目最看重的能力
+
+新建 `tests/test_anti_fingerprint.py`：取任一训练文档，程序化做三种扰动，**断言判断结果不变**：
+```python
+# 伪代码
+orig_text = to_text("某文档.docx")
+mutated = orig_text
+mutated = re.sub(r'2026年', '2031年', mutated)              # 改年份
+mutated = re.sub(r'(\d+)%', lambda m: f"{int(m.group(1))-7}%", mutated)  # 改KPI数值
+mutated = mutated.replace("输电线路", "燃气管网")            # 改项目领域名
+# 断言：orig 和 mutated 的 label 相同
+assert run_sync(orig_text).result.label == run_sync(mutated).result.label
+```
+对至少 3 篇文档做（含通过/不通过各一）。**任何一篇结果变了 = 还有指纹未清，回头查。**
+
+**验收**：
+- [ ] 扰动年份/KPI数值/项目名后，所有测试文档的 label 不变
+- [ ] 测试失败时能定位到是哪条规则受了指纹影响
+
+#### 任务 11：合成样本测试 — 验证规则触发正确
+
+构造最小合成文档验证确定性规则：
+- 立项申请书：审批栏「填了日期+意见」vs「空白占位符」→ R-01 应分别 pass/fail
+- 计划任务书：含「填写说明…删除本提示」vs 不含 → R-05 应分别 fail/pass
+- 含「成员10、成员11」vs 真实姓名 → R-06 应分别 fail/pass
+
+**验收**：
+- [ ] 每条确定性规则有正反两个合成样本，触发符合预期
+
+#### 任务 12：intent 路由验证
+
+- intent 空 / "综合评审" → 跑全部规则
+- intent "判断创新程度" → 命中 R-07（关键词「创新」在其 intent_keywords）
+- intent "材料完整性" → 命中 R-01（关键词「材料完整」）
+- intent 完全陌生（如"评估风险"）→ 兜底全量，不崩
+
+**验收**：
+- [ ] 上述 intent 各自激活的规则子集符合预期，陌生 intent 有兜底不报错
+
+> 注：v3 spec ⑥.4 要的「LLM 把 intent 映射到规则集」当前仍是关键词匹配（已知妥协）。**本轮不强制升级 LLM 路由**——关键词+兜底已能正确工作，LLM 路由是锦上添花，时间不够可留待后续。若做，在 `_route_by_intent` 加一个「关键词全不命中时，用一次 LLM 把 intent 映射到 rule_id 列表」的分支。
+
+---
+
+### 🚀 P4 — 部署（方向确认后才动；这是题目硬要求）
+
+> **前置条件**：P1 全部完成 + P3 验证通过。方向确认对了，才值得花力气部署。
+
+#### 任务 13：Docker 化
+
+新建 `Dockerfile` + `docker-compose.yml`：
+- 基础镜像 `python:3.12-slim`
+- 装 `requirements.txt`（**先删掉 `langgraph` 如果任务 14 不上 langgraph；若上则保留**——见任务 14 决策）
+- 文档解析：Docker 内无 doc-read CLI，靠 `python-docx`（**仅支持 .docx**）
+- 暴露 7860 端口，`CMD ["python", "-m", "src.aiarmy.web"]`
+- compose 映射端口 + 挂载 `.env` + 挂载 `logs/`
+
+**【盲点 J】格式边界声明**：Docker 环境 `python-docx` 只读 `.docx`，读不了 `.doc`/`.pdf`。**两个动作二选一**：
+- A（推荐，省事）：`web.py` 的 `file_types` 限制为 `[".docx"]`，并在 UI 提示「请上传 .docx」。README 注明仅支持 .docx。
+- B（完整）：镜像内装 LibreOffice 做 .doc→.docx 转换 + PyMuPDF 读 PDF。重，时间不够别做。
+默认走 A。
+
+**验收**：
+- [ ] `docker compose up -d --build` 本机起得来，浏览器 7860 能上传 .docx 出结果
+- [ ] 容器内无 doc-read 也能解析 .docx（python-docx 生效）
+- [ ] README/design 的部署段落与实际镜像行为一致（铁律 4）
+
+#### 任务 14：LangGraph 迁移（方向对的试金石）
+
+**定位**：langgraph 是**部署载体 + 兑现题面"agent 编排"**，不是 3 节点线性流程的技术必需。先做对 harness 再迁移，迁移就是纯机械动作。
+
+**试金石**：迁移时若发现 `match.py/judge.py/parse.py/rules` 要跟着改，说明 harness 还有耦合没解干净；**若只动 `graph.py`（顺序 await → StateGraph 节点连边）、`schemas.py` 的 Pydantic 当 state、业务逻辑一行不动 = 方向对了。**
+
+**改法**：
+- `graph.py` 用 `langgraph.graph.StateGraph`，state 用 `schemas.PipelineState`（已是 Pydantic）
+- 三节点 `parse→match→judge` 注册为 graph node，线性连边
+- `agents/*.py` 的 `run` 函数原样复用，只是被 node 包一层
+- `requirements.txt` 保留 `langgraph`
+
+**验收**：
+- [ ] 迁移后 `backtest.py` 跑出的结果与迁移前**完全一致**（业务逻辑零改动的证明）
+- [ ] `agents/` 和 `rules/` 在本次迁移中 git diff 为空（只有 graph.py 变动）
+- [ ] 若 agents 被迫改动，停下来报告——说明 harness 有耦合，先解耦
+
+#### 任务 15：NAS 部署拿公网 URL
+
+- 推到 NAS：`ssh nas-wan`，部署到 `/volume1/docker/aiarmy`
+- `docker compose up -d --build`
+- 确认公网可访问（题目硬要求，无 URL 判废）
+- 部署成功后，更新 README 的真实公网 URL
+
+**验收**：
+- [ ] 公网 URL 浏览器可打开
+- [ ] 评委 5 步流程全通：选类型 → 上传 → 输 intent → 运行 → 看 JSON 结果
+- [ ] `.env`（key）通过 compose 挂载注入，未写进镜像层
+
+---
+
+## ④ 不要动的东西（这些是对的，保留）
+
+- **三 agent 分层**（parse/match/judge）+ Pydantic 契约（schemas.py）——松耦合，迁 langgraph 的本钱。
+- **judge 三层裁决**（all_passed→通过 / critical_fail≥0.7→不通过 / 模糊→LLM）——结构正确，只改 matched_rules 来源（任务 5），别改裁决逻辑。
+- **指纹清零的成果**（R-01 通用日期、R-07 判自我重复、YAML few_shot 虚构占位）——v3 成果，别回退。
+- **诚实基线 68.4%**——别为刷训练集分数加任何指纹。
+- **`detect_doc_type` 关键词判别**——UI 路径不再依赖它（任务 1），但 backtest/CLI 仍需要，保留。
+
+---
+
+## ⑤ 完工总验收（全部打勾 = harness 收尾完成，可交付）
+
+- [ ] `.env.example` 无真 key，`.env` 已 gitignore（P0）
+- [ ] 评委能在 UI 选类型，分流按所选类型走（任务 1）
+- [ ] 输出 JSON 含 id/dataset_type，字段对齐题目（任务 2）
+- [ ] R-07 走 deepseek-v4-pro，design 描述一致（任务 3）
+- [ ] 所有 LLM 不可靠路径 fallback 方向=不通过（任务 4）
+- [ ] matched_rules 确定性取自 verdicts，无 LLM 捏造（任务 5）
+- [ ] logs/runs.jsonl 记录每次判断中间过程（任务 6）
+- [ ] R-02 不被占位符欺骗（任务 7）、R-07 看得到预算（任务 8）
+- [ ] 反指纹测试通过——扰动年份/KPI/项目名结果不变（任务 10）⭐
+- [ ] 合成样本 + intent 路由测试通过（任务 11/12）
+- [ ] Docker 本机起得来，仅支持 .docx 且文档已声明（任务 13）
+- [ ] langgraph 迁移后 backtest 结果不变、agents/rules 零改动（任务 14）
+- [ ] 公网 URL 可访问，评委 5 步流程走通（任务 15）
+
+---
+
+## ⑥ 给执行模型的一句话
+
+> 本轮**不发明新业务逻辑**。P1 是把已有逻辑的脚手架做对（类型靠选不靠猜、fallback 向从严、命中规则要可信、留下观测日志），P3 是用反指纹测试证明方向对，P4 是把它部署上线。每改一处对照「⑤ 总验收」打勾，改完 agents 业务逻辑还能零改动迁 langgraph = 你做对了。遇到「这条规则要不要为某篇训练文档加特征」的念头——停，那是指纹，违反铁律 1。
+
+---
+
+> *糯米 2026-06-30 · 这是 v3 的收尾棒。核心：harness 做对了，剩下的才敢交给模型。我们看不到隐藏集，所以上线前必须把能控制的全做对——这就是本轮的全部意义喵。*

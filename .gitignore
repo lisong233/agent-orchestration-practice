@@ -12,6 +12,12 @@ venv/
 # Data
 训练集/
 
+# Env
+.env
+
+# Logs
+logs/
+
 # Temp
 *.tmp
 .DS_Store

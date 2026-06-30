@@ -113,7 +113,10 @@ def quick_check(rule: dict, text: str) -> RuleVerdict | None:
                               evidence="审批意见缺失或日期空白", confidence=0.95)
 
     if rid == "R-02":  # 承诺书签署完整性
-        signed = bool(re.search(r'项目负责人[：:]\s*\n?\s*\S{2,}', text, re.DOTALL))
+        m = re.search(r'项目负责人[：:]\s*\n?\s*(\S{2,})', text, re.DOTALL)
+        # 排除占位符词，防止「项目负责人：（签字）」判为已签（v4 spec 任务7）
+        placeholder = {"（签字）", "(签字)", "签字", "（盖章）", "(盖章)", "盖章", "姓名", "/"}
+        signed = bool(m) and m.group(1).strip() not in placeholder
         # 判「日期栏是否填写」，不判具体年份
         dated = bool(re.search(r'日期[：:]\s*\d{4}', text))
         if signed and dated:
@@ -251,17 +254,17 @@ async def run(fields: DocFields, intent: str = "", use_llm: bool = True) -> list
                         confidence=resp.get("confidence", 0.5),
                     )
             except Exception:
-                # LLM 失败时默认通过
+                # LLM 失败时从严判不通过（v4 spec 任务4：少数类是通过，安全侧是不通过）
                 result = RuleVerdict(
                     rule_id=rule["rule_id"], rule_name=rule["rule_name"],
-                    passed=True, evidence="LLM调用失败，默认通过", confidence=0.3
+                    passed=False, evidence="LLM调用失败，安全侧从严判不通过", confidence=0.5,
                 )
 
         if result is None:
-            # 未启用 LLM 且正则无法判断
+            # 未启用 LLM 且正则无法判断 → 从严
             result = RuleVerdict(
                 rule_id=rule["rule_id"], rule_name=rule["rule_name"],
-                passed=True, evidence="需LLM判断，默认通过", confidence=0.3
+                passed=False, evidence="需LLM判断，安全侧从严判不通过", confidence=0.5,
             )
 
         verdicts.append(result)
@@ -281,15 +284,31 @@ def _eval_r07_multidim(fields: DocFields, rule: dict) -> RuleVerdict:
             val = str(v)[:300] if v else "（无）"
             field_text += f"【{k}】{val}\n"
 
+    # 构造 R-07 输入：前 2000 字 + 预算段落（若在后部）
+    excerpt = fields.raw_excerpt[:2000]
+    budget_idx = fields.raw_excerpt.find("经费")
+    if budget_idx < 0:
+        budget_idx = fields.raw_excerpt.find("预算")
+    if budget_idx > 2000:
+        excerpt += "\n...\n" + fields.raw_excerpt[budget_idx:budget_idx + 800]
+
     resp = chat_json(
         system=R07_MULTIDIM_SYSTEM,
         user=R07_MULTIDIM_USER.format(
             title=fields.title,
             fields=field_text,
-            raw_excerpt=fields.raw_excerpt[:2000],
+            raw_excerpt=excerpt,
         ),
+        model="deepseek-v4-pro",   # 难例升级强模型（v4 spec 任务3）
         max_tokens=1500,
     )
+
+    # LLM 返回垃圾 JSON → 从严判不通过（v4 spec 任务4）
+    if resp.get("_parse_error"):
+        return RuleVerdict(
+            rule_id="R-07", rule_name=rule["rule_name"], passed=False,
+            evidence="LLM返回无法解析，安全侧从严判不通过", confidence=0.5,
+        )
 
     # 解析三维评分
     tech = resp.get("technical_specificity", {})

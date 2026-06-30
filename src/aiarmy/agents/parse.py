@@ -94,9 +94,15 @@ def quick_extract(text: str, doc_type: DocType) -> DocFields:
     )
 
 
-async def run(raw_text: str, intent: str = "", use_llm: bool = True) -> DocFields:
-    """执行文档解析"""
-    doc_type = detect_doc_type(raw_text)
+async def run(raw_text: str, intent: str = "", use_llm: bool = True,
+             doc_type_override: str | None = None) -> DocFields:
+    """执行文档解析。
+    doc_type_override: 评委 UI 选择的类型，覆盖自动检测（None=自动检测，用于 backtest/CLI）。
+    """
+    if doc_type_override:
+        doc_type = DocType(doc_type_override)
+    else:
+        doc_type = detect_doc_type(raw_text)
 
     # 正则模式：快速，不需要API
     if not use_llm:

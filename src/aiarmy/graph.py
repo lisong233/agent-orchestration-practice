@@ -1,6 +1,8 @@
 """
 LangGraph 编排 — 3 节点管线
 [parse] → DocFields → [match] → Verdict[] → [judge] → FinalResult
+
+v4: 支持 doc_type_override（评委 UI 选择类型，覆盖自动检测）；审计日志落盘。
 """
 import asyncio
 from dataclasses import dataclass, field
@@ -22,17 +24,16 @@ class PipelineState:
 
 
 class AuditPipeline:
-    """审核管线 — 不使用 LangGraph StateGraph，直接用简单的顺序调用。
-    对于 3 节点的线性流程，这个复杂度级别不需要引入 StateGraph 的状态机开销。
-    如果需要条件路由（按 doc_type 分流），在 match 节点中处理。
-    """
+    """审核管线 — 3 节点顺序调用。"""
 
     def __init__(self, use_llm: bool = True):
         self.use_llm = use_llm
 
     async def run(self, raw_text: str, intent: str = "综合评审",
-                  verbose: bool = True) -> PipelineState:
-        """执行完整审核管线"""
+                  verbose: bool = True, doc_type_override: str | None = None) -> PipelineState:
+        """执行完整审核管线。
+        doc_type_override: 评委 UI 选择的类型，覆盖自动检测（None=自动检测，用于 backtest/CLI）。
+        """
         state = PipelineState(raw_text=raw_text, intent=intent)
 
         def log(msg):
@@ -42,7 +43,7 @@ class AuditPipeline:
         try:
             # 节点1：解析
             log(f"[parse] 解析文档 ({len(raw_text)}字符)...")
-            state.fields = await self._parse(raw_text, intent)
+            state.fields = await self._parse(raw_text, intent, doc_type_override=doc_type_override)
             state.doc_type = state.fields.doc_type
             log(f"[parse] → {state.doc_type.value} | {state.fields.title[:40] if state.fields.title else '?'}")
 
@@ -63,11 +64,32 @@ class AuditPipeline:
             state.error = str(e)
             log(f"❌ ERROR: {e}")
 
+        # 审计日志落盘（v4：部署后唯一观测窗口）
+        try:
+            from src.aiarmy.audit_log import log_run
+            log_run({
+                "doc_type": state.doc_type.value if state.doc_type else "未知",
+                "title": state.fields.title if state.fields else "",
+                "intent": state.intent,
+                "verdicts": [
+                    {"rule_id": v.rule_id, "passed": v.passed, "confidence": v.confidence}
+                    for v in state.verdicts
+                ],
+                "label": state.result.label if state.result else "错误",
+                "reason": state.result.reason if state.result else "",
+                "use_llm": self.use_llm,
+                "error": state.error,
+            })
+        except Exception:
+            pass  # 日志写入失败不影响主流程
+
         return state
 
-    async def _parse(self, raw_text: str, intent: str) -> DocFields:
+    async def _parse(self, raw_text: str, intent: str,
+                     doc_type_override: str | None = None) -> DocFields:
         from src.aiarmy.agents.parse import run
-        return await run(raw_text, intent, use_llm=self.use_llm)
+        return await run(raw_text, intent, use_llm=self.use_llm,
+                         doc_type_override=doc_type_override)
 
     async def _match(self, fields: DocFields, intent: str) -> list[RuleVerdict]:
         from src.aiarmy.agents.match import run
@@ -79,7 +101,8 @@ class AuditPipeline:
         return await run(verdicts, title, intent, use_llm=self.use_llm)
 
 
-def run_sync(raw_text: str, intent: str = "综合评审", use_llm: bool = True) -> PipelineState:
+def run_sync(raw_text: str, intent: str = "综合评审", use_llm: bool = True,
+             doc_type_override: str | None = None) -> PipelineState:
     """同步入口 — 方便调试和 Gradio 调用"""
     pipeline = AuditPipeline(use_llm=use_llm)
-    return asyncio.run(pipeline.run(raw_text, intent))
+    return asyncio.run(pipeline.run(raw_text, intent, doc_type_override=doc_type_override))

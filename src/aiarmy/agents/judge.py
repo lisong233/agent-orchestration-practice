@@ -70,9 +70,15 @@ async def run(verdicts: list[RuleVerdict], title: str = "", intent: str = "",
                     verdicts_json=verdicts_json,
                 ),
             )
+            label = resp.get("label", "不通过")
+            # matched_rules 确定性取自 verdicts，不靠 LLM 现编（v4 spec 任务5）
+            source = [v for v in verdicts if not v.passed] if label == "不通过" else verdicts
             return FinalResult(
-                label=resp.get("label", "不通过"),
-                matched_rules=resp.get("matched_rules", []),
+                label=label,
+                matched_rules=[
+                    {"rule_id": v.rule_id, "rule_name": v.rule_name, "evidence": v.evidence}
+                    for v in source
+                ],
                 reason=resp.get("reason", ""),
             )
         except Exception:
