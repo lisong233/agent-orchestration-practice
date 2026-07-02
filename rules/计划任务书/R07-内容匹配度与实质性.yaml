@@ -26,3 +26,4 @@ few_shot:
     verdict: fail
     note: "软件/算法项目不应有硬件装置类KPI——这是领域常识，不是匹配训练集"
 weight: high
+tier: content  # C类：内容实质性，主判据

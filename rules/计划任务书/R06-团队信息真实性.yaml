@@ -21,4 +21,5 @@ few_shot:
     verdict: pass
   - excerpt: "| 10 | 成员10 | 30 | 工程师 | 班员 | 参与数据采集与整理 |\n| 11 | 成员11 | 30 | 工程师 | 班员 | 参与现场测试与验证 |\n...\n| 21 | 成员21 | 30 | 工程师 | 班员 | 参与协调联络 |"
     verdict: fail
-weight: critical
+weight: conditional
+tier: conditional  # B类：申请人可控的完整度硬伤，需regime感知（有团队章节才判）

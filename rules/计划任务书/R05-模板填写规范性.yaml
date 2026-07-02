@@ -19,4 +19,5 @@ few_shot:
     verdict: pass
   - excerpt: "【填写说明：请在此处填写项目相关内容，删除本提示】"
     verdict: fail
-weight: critical
+weight: conditional
+tier: conditional  # B类：申请人可控的完整度硬伤，需regime感知

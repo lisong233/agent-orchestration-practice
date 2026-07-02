@@ -19,4 +19,5 @@ few_shot:
     verdict: pass
   - excerpt: "申请部门/单位意见： （公章） 年    月     日"
     verdict: fail
-weight: critical
+weight: advisory
+tier: advisory  # A类：下游行政信号，申请人不可控，永不裁决label

@@ -22,3 +22,4 @@ few_shot:
   - excerpt: "本项目针对变电站智能巡检图像分析技术研究关键技术问题，拟开展核心技术攻关与装置研制，预期形成具有自主知识产权的技术成果。"
     verdict: fail
 weight: high
+tier: content  # C类：内容实质性，主判据

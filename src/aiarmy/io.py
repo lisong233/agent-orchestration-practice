@@ -1,19 +1,83 @@
 """
 文档 I/O 层 — 统一的文档→文本转换入口。
-开发环境用 doc-read CLI（全局安装），Docker 环境用 python-docx 兜底。
+
+解析策略（优先级降级）：
+  1. doc-read CLI（本地开发，OfficeCLI HTML→Markdown，最准）
+  2. LibreOffice headless（Docker，docx→text，高保真）
+  3. python-docx（兜底，读段落+表格纯文本）
 """
 import subprocess
 import os
+import tempfile
 from pathlib import Path
 
 
+def _via_docread(path: Path) -> str | None:
+    """方式 A：doc-read CLI（本地开发环境）"""
+    try:
+        result = subprocess.run(
+            ["doc-read", str(path)],
+            capture_output=True, text=True, encoding="utf-8", timeout=30,
+        )
+        if result.stdout.strip():
+            return result.stdout
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+    return None
+
+
+def _via_libreoffice(path: Path) -> str | None:
+    """方式 B：LibreOffice headless（Docker 环境，Linux）"""
+    try:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result = subprocess.run(
+                ["libreoffice", "--headless", "--convert-to", "txt:Text",
+                 "--outdir", tmpdir, str(path)],
+                capture_output=True, text=True, timeout=30,
+            )
+            if result.returncode == 0:
+                # LibreOffice 输出文件名为 原文件名.txt
+                out_name = path.stem + ".txt"
+                out_path = os.path.join(tmpdir, out_name)
+                if os.path.exists(out_path):
+                    with open(out_path, encoding="utf-8", errors="replace") as f:
+                        content = f.read()
+                    if content.strip():
+                        return content
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+    return None
+
+
+def _via_python_docx(path: Path) -> str | None:
+    """方式 C：python-docx（纯 Python 兜底）"""
+    try:
+        from docx import Document
+        doc = Document(str(path))
+        parts = []
+
+        # 段落
+        for para in doc.paragraphs:
+            if para.text.strip():
+                parts.append(para.text)
+
+        # 表格：保留结构
+        for table in doc.tables:
+            for row in table.rows:
+                cells = []
+                for cell in row.cells:
+                    text = cell.text.strip().replace('\n', ' ')
+                    cells.append(text)
+                parts.append(" | ".join(cells))
+
+        return "\n".join(parts)
+    except ImportError:
+        pass
+    return None
+
+
 def to_text(file_path: str | Path) -> str:
-    """
-    将文档转换为纯文本。支持 .txt / .docx / .doc / .pdf。
-    策略：
-    1. .txt → 直接读
-    2. .docx/.doc/.pdf → doc-read CLI（开发）或 python-docx（兜底）
-    """
+    """将文档转换为纯文本。支持 .txt / .docx / .doc / .pdf。"""
     path = Path(file_path)
 
     # .txt 直接读
@@ -21,43 +85,24 @@ def to_text(file_path: str | Path) -> str:
         with open(path, encoding="utf-8", errors="replace") as f:
             return f.read()
 
-    # 二进制格式 → 尝试 doc-read CLI
+    # 二进制格式 → 逐级降级
     if path.suffix.lower() in (".docx", ".doc", ".pdf"):
-        # 方式 A：doc-read CLI（全局已安装）
-        try:
-            result = subprocess.run(
-                ["doc-read", str(path)],
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                timeout=30,
-            )
-            if result.returncode == 0 and result.stdout.strip():
-                return result.stdout
-            # 如果 doc-read 返回了内容但 returncode 非零，也尝试使用
-            if result.stdout.strip():
-                return result.stdout
-        except (FileNotFoundError, subprocess.TimeoutExpired):
-            pass
+        # A：doc-read CLI
+        text = _via_docread(path)
+        if text:
+            return text
 
-        # 方式 B：python-docx 兜底（Docker 环境无 doc-read CLI）
-        try:
-            from docx import Document
-            doc = Document(str(path))
-            paragraphs = []
-            for para in doc.paragraphs:
-                if para.text.strip():
-                    paragraphs.append(para.text)
-            # 也读表格
-            for table in doc.tables:
-                for row in table.rows:
-                    cells = [cell.text.strip() for cell in row.cells]
-                    paragraphs.append(" | ".join(cells))
-            return "\n".join(paragraphs)
-        except ImportError:
-            pass
+        # B：LibreOffice headless
+        text = _via_libreoffice(path)
+        if text:
+            return text
 
-        # 方式 C：终极兜底 — 尝试当文本读（用于某些非标准格式）
+        # C：python-docx
+        text = _via_python_docx(path)
+        if text:
+            return text
+
+        # D：终极兜底——当纯文本读
         try:
             with open(path, encoding="utf-8", errors="replace") as f:
                 content = f.read()
@@ -67,9 +112,9 @@ def to_text(file_path: str | Path) -> str:
             pass
 
         raise RuntimeError(
-            f"无法解析 {path.suffix} 文件。请安装 doc-read CLI 或 python-docx。"
+            f"无法解析 {path.suffix} 文件。"
             f"\n  开发环境：pip install doc-read"
-            f"\n  Docker 环境：pip install python-docx"
+            f"\n  Docker 环境：需 LibreOffice 或 python-docx"
         )
 
     raise ValueError(f"不支持的文件格式: {path.suffix}")
@@ -79,5 +124,5 @@ def detect_doc_type_from_path(file_path: str | Path) -> str | None:
     """从文件扩展名推断文档类型"""
     suffix = Path(file_path).suffix.lower()
     if suffix in (".docx", ".doc", ".pdf", ".txt"):
-        return None  # 需要读内容才能判断
+        return None
     return None

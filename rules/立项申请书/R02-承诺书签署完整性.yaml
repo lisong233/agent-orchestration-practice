@@ -23,4 +23,5 @@ few_shot:
       项目负责人：
       日期：  年   月   日
     verdict: fail
-weight: critical
+weight: conditional
+tier: conditional  # B类：申请人可控的完整度硬伤，需regime感知（有槽位才判）

@@ -23,3 +23,4 @@ few_shot:
   - excerpt: "总经费 50.0"
     verdict: fail
 weight: high
+tier: content  # C类：内容实质性，主判据

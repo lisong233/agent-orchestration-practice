@@ -28,6 +28,8 @@ class RuleVerdict(BaseModel):
     passed: bool
     evidence: str = Field(description="引用文档原文")
     confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    tier: Literal["advisory", "conditional", "content"] = "content"
+    """规则层级：advisory（A类-永不裁决）/ conditional（B类-regime感知）/ content（C类-主判据）"""
 
 
 class FinalResult(BaseModel):
@@ -35,6 +37,8 @@ class FinalResult(BaseModel):
     label: Literal["通过", "不通过"]
     matched_rules: list[dict] = Field(description="命中的规则列表")
     reason: str = Field(description="150字以内的最终判断说明")
+    form_notes: str = ""
+    """形式提示（A/B类规则的附注，与内容判据分离，便于Web分区展示）"""
 
 
 class PipelineState(BaseModel):
@@ -50,3 +54,7 @@ class PipelineState(BaseModel):
     use_llm: bool = True
     verbose: bool = True
     doc_type_override: Optional[str] = None
+    # loop 控制（v5 新增）
+    critic_ok: bool = False
+    revision_count: int = 0
+    critic_feedback: str = ""
