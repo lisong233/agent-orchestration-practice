@@ -68,7 +68,7 @@ Gradio Web (localhost:7860)
 
 - **sanitize**（v5 新增）：输入净化，中和 prompt 注入模式，所有 LLM prompt 包裹 `<document>` 数据边界
 - **parse**：文档 → 结构化字段（正则快模式 / LLM 深模式），类型由评委 UI 选择
-- **match**：逐规则评估，正则判结构 + LLM 判语义；R-07 难例走 deepseek-v4-pro，R-03/R-04 走 2 维 LLM 评分
+- **match**：逐规则评估，正则判结构 + LLM 判语义；R-03/R-04/R-07 统一走 deepseek-v4-flash 多维评分
 - **judge**：内容优先裁决——C 层（内容）主导 label，B 层（形式硬伤）内容 pass 时不反转，A 层（审批）纯 advisory
 - **critic**（v5 新增）：确定性质量门（零额外 LLM）——evidence 非空/引用原文/长度达标，不达标定向重评
 

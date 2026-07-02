@@ -42,7 +42,10 @@ async def _match_node(state: PipelineState) -> dict:
     """节点2：规则匹配 → RuleVerdict[]
     v5: 若 critic_feedback 非空 → 定向重评点名规则，其余复用上轮结果。
     """
-    from src.aiarmy.agents.match import run, load_rules, quick_check, _eval_content_quality, _eval_r07_multidim
+    from src.aiarmy.agents.match import (
+        run, load_rules, quick_check, _eval_content_quality, _eval_r07_multidim,
+        R03_DIMENSIONS, R04_DIMENSIONS,
+    )
     from src.aiarmy.llm import chat_json
     from src.aiarmy.schemas import RuleVerdict
 
@@ -67,21 +70,11 @@ async def _match_node(state: PipelineState) -> dict:
                             if rule["rule_id"] == "R-07":
                                 result = _eval_r07_multidim(state.fields, rule)
                             elif rule["rule_id"] == "R-03":
-                                result = _eval_content_quality(
-                                    "R-03", rule, state.fields,
-                                    dim1_name="技术方法具体性",
-                                    dim1_desc="是否描述了具体的技术方法/原理/实验设计？有无个性化内容不可套用于其他项目？",
-                                    dim2_name="创新点深度",
-                                    dim2_desc="创新点是实质性方法论还是空泛概念罗列？",
-                                )
+                                rule["_dim1_name"], rule["_dim2_name"] = "技术方法具体性", "创新点深度"
+                                result = _eval_content_quality("R-03", rule, state.fields, R03_DIMENSIONS)
                             elif rule["rule_id"] == "R-04":
-                                result = _eval_content_quality(
-                                    "R-04", rule, state.fields,
-                                    dim1_name="预算分项完整性",
-                                    dim1_desc="是否分项到具体科目（材料费/测试费/差旅费/知识产权等）？",
-                                    dim2_name="金额合理性",
-                                    dim2_desc="各分项金额是否与项目规模匹配？有无计算依据？",
-                                )
+                                rule["_dim1_name"], rule["_dim2_name"] = "预算分项完整性", "金额合理性"
+                                result = _eval_content_quality("R-04", rule, state.fields, R04_DIMENSIONS)
                         except Exception:
                             pass
                     if result is not None:
