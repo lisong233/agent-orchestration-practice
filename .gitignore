@@ -27,3 +27,6 @@ Thumbs.db
 # 临时审查/扫描草稿（含可能的敏感中间产物，不进仓库）
 .claude/playground/
 _backtest/
+.gradio/
+.playwright-mcp/
+aiarmy-pubnet-*.png

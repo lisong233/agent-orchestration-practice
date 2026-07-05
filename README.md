@@ -103,7 +103,9 @@ Gradio Web (localhost:7860)
 - `rules/` — 规则库（7 条，YAML，含 tier 分层标记）
 - `eval/backtest.py` — 完整评估脚本（混淆矩阵 + Precision/Recall/F1）
 - `tests/` — 三条路测试 / 反指纹测试 / 合成样本测试 / Intent 路由测试
-- `design.md` — 系统设计文档（含元规则双层框架）
+- `docs/design.md` — 系统设计文档（含元规则双层框架 + 诚实基线 + 部署方案）
+- `docs/setup.sh` — 评委一键部署脚本（Linux/macOS）
+- `docs/setup.ps1` — 评委一键部署脚本（Windows）
 - `README.md` — 本文件
 
 ## 部署

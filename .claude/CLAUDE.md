@@ -76,49 +76,18 @@ S01 初探 ──→ S02 施工蓝图 + S02a 执行附录 ──执行──→ 
 - **SF6（14）**：重新保存后仅含封面页，正文缺失。
 - **计划任务书 doc 13/14**：文本层面与不通过文档无法区分（共用同一模板），纯规则引擎无法召回。
 
-## 当前状态（2026-07-02）
+## 当前状态（2026-07-05）
 
-S01 ✅ → S02 ✅ → S03 ✅ → S04 ✅ → **S05 ✅ → R05 待高级模型审阅**
+S01 ✅ → S02 ✅ → S03 ✅ → S04 ✅ → S05 ✅ → v5.1 ✅ → **v5.1 闭环**
 
-### S05 执行成果（本轮）
+### 闭环版本（2026-07-05）
 
-**核心变更**（详见 `docs/spec/S05-2026-07-01-元规则框架.md`）：
+**题目 100% 完成**（详见 `docs/design.md`）：
 
-1. **双层框架**：元规则层（M1-M4 约束"怎么判"）+ 语义规则库层（"判什么"）
-2. **作者可控性三分法**：A类（advisory-永不裁决）/ B类（conditional-regime感知）/ C类（content-主判据）
-3. **管线升级**：3 节点 → 5 节点（sanitize + parse + match + judge + critic），含条件回边
-4. **内容优先**：R-01 降为 advisory，R-03/R-04 去桩接 LLM，judge 重写为 tier 分层裁决
-5. **抗注入**：sanitize 净化 + `<document>` 数据边界包裹所有 LLM prompt
-6. **critic 回环**：确定性 evidence 质量门（零额外 LLM），封顶 1 轮定向重评
-
-### S04 执行成果（`2856d9f`）
-
-**LangGraph 迁移**：顺序 await → StateGraph 节点连边。试金石通过——agents/ 和 rules/ 零改动。
-
-**v4 harness 收尾**（`e47bdc3`）：
-- P0 安全：`.env.example` 占位符化 + `.env` gitignore + `logs/` gitignore
-- P1 Harness：UI 类型选择 / 输出 JSON 对齐题目 / R-07 强模型 / fallback 从严 / matched_rules 确定性 / 审计日志
-- P2 鲁棒性：R-02 占位符防骗 / R-07 看预算段落
-- P3 验证：反指纹 / 合成样本 / intent 路由 全部通过
-- P4 部署：Dockerfile + docker-compose.yml 就位
-
-### 诚实基线
-
-| 模式 | 综合 | 立项申请书 | 计划任务书 |
-|------|:---:|:---:|:---:|
-| 纯规则 | 89.5% (17/19) | 100% (9/9) | 80% (8/10) |
-
-### 执行发现（详见 `R04-2026-07-01-执行发现.md`）
-
-1. **R-03/R-04 是桩**（默认通过）——测试集若格式齐全则立项申请书准确率崩
-2. 终审审计发现 4 个漏洞（空 verdicts 误判通过 / design.md StateGraph 表述 / R-07 字段完整性 / R-07 avg_score 兜底）
-3. 主人的核心洞察：评分重心是**理由说服力**（matched_rules evidence），不是 label 准确率
-
-### 待做
-
-- [x] 高级模型审阅 R04 → 已产出 S05
-- [x] S05 施工完毕：P0-P4 全绿 + NAS 部署
-- [x] NAS 部署拿公网 URL：`http://100.66.1.1:7860`
-- [ ] 高级模型审阅 R05 → 决定是否写 S06
-- [ ] LLM 增强模式全量回测（需要 API key）
-- [ ] Git 提交 v5 变更（22 个文件）
+- [x] 公网 URL：`https://fe41e1b5a3b9aa1bd0.gradio.live`（Gradio share 隧道，端到端验证通过）
+- [x] `docs/design.md`：系统设计文档（搬家到 docs/，回答题目 5 问 + 诚实基线 + 部署方案）
+- [x] `docs/setup.sh` / `docs/setup.ps1`：评委一键部署脚本（创建 venv → 安装依赖 → 配置 key → 启动）
+- [x] 19/19 测试全绿（三条路 + 反指纹 + 合成样本 + intent 路由）
+- [x] `R07-公网访问方案.md`：公网调研 + 端到端验证
+- [x] 审计日志 (`logs/runs.jsonl`)：NAS 容器内 44 条真实 LLM 运行记录
+- [x] NAS Docker 部署：`restart: unless-stopped`，LibreOffice + DeepSeek LLM 全链路
