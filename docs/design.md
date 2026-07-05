@@ -5,6 +5,109 @@
 
 ---
 
+## 0. 系统全景（先看这张图）
+
+### 0.1 完整管线（Harness 全身像）
+
+```mermaid
+flowchart LR
+    subgraph 输入层
+        A1["📄 .docx / .doc 上传"]
+        A2["🎯 intent 评审意图"]
+        A3["🏷️ 类型选择 / 自动检测"]
+    end
+
+    subgraph LangGraph 5节点管线
+        direction TB
+        N0["🛡️ sanitize<br/>输入净化<br/><i>M2 抗注入</i>"]
+        N1["📋 parse<br/>文档解析+类型检测<br/><i>正则快模式 / LLM深模式</i>"]
+        N2["🔍 match<br/>逐规则评估<br/><i>正则判结构 + LLM判语义</i>"]
+        N3["⚖️ judge<br/>内容优先裁决<br/><i>tier 分层：A advisory / B conditional / C content</i>"]
+        N4["🔄 critic<br/>证据质量门<br/><i>零LLM · 确定性检查</i>"]
+
+        N0 --> N1 --> N2 --> N3 --> N4
+        N4 -.->|"❌ evidence空/未引用原文<br/>定向重评(封顶1轮)"| N2
+        N4 -->|"✅ 质量通过"| OUT
+    end
+
+    subgraph 输出层
+        OUT["📤 JSON 输出<br/>label · matched_rules · evidence · reason · form_notes"]
+    end
+
+    A1 --> N0
+    A2 --> N2
+    A3 --> N1
+
+    subgraph 规则库
+        R["📁 rules/<br/>├── 立项申请书/<br/>│   ├── R01 审批(advisory)<br/>│   ├── R02 承诺书(conditional)<br/>│   ├── R03 技术方案(content)<br/>│   └── R04 预算(content)<br/>└── 计划任务书/<br/>    ├── R05 模板(conditional)<br/>    ├── R06 团队(conditional)<br/>    └── R07 内容质量(content)"]
+    end
+
+    R --> N2
+```
+
+### 0.2 裁决引擎：tier 三分层 → 硬标签
+
+```mermaid
+flowchart TD
+    V["📥 所有 RuleVerdict[]<br/>（含 tier 标记）"]
+
+    V --> EMPTY{"verdicts 为空？"}
+    EMPTY -->|"是"| FAIL["❌ 不通过<br/>安全侧从严"]
+
+    V --> SPLIT["按 tier 分层"]
+
+    SPLIT --> A["🅰️ A 层 advisory<br/>R-01 审批签章"]
+    SPLIT --> B["🅱️ B 层 conditional<br/>R-02 承诺书 / R-05 模板 / R-06 占位符"]
+    SPLIT --> C["🅲 C 层 content<br/>R-03 技术 / R-04 预算 / R-07 内容质量"]
+
+    C --> C_CHECK{"C 层有 fail？"}
+    C_CHECK -->|"是"| FAIL_C["❌ 不通过<br/>C 层主导裁决<br/>B 层 fail 作佐证"]
+    C_CHECK -->|"否，全部 pass"| PASS["✅ 通过<br/>内容实质性审核通过"]
+
+    A --> NOTES["进 form_notes<br/>永不裁决 label"]
+    B --> B_CHECK{"C 层 pass？"}
+    B_CHECK -->|"是"| NOTES
+    B_CHECK -->|"否"| FAIL_C
+```
+
+### 0.3 critic 回环：证据质量保证
+
+```mermaid
+flowchart LR
+    JUDGE["judge 输出<br/>FinalResult + matched_rules"] --> C1{"① evidence 非空<br/>且 ≥6 字？"}
+    C1 -->|"否"| REVISE["📝 定向重评<br/>只重跑点名规则<br/>revision_count += 1"]
+    C1 -->|"是"| C2{"② evidence 中文片段<br/>在原文中可找到？<br/><i>（跳过系统消息）</i>"}
+    C2 -->|"否"| REVISE
+    C2 -->|"是"| C3{"③ revision_count<br/>≥ 1？"}
+    C3 -->|"否"| DONE["✅ critic_ok<br/>输出结果"]
+    C3 -->|"是（已达上限）"| DONE
+
+    REVISE --> BACK["回 match 节点"]
+```
+
+### 0.4 一句话数据流
+
+```
+上传 .docx
+  → sanitize（净化注入）→ parse（提取字段+检测类型）
+  → match（正则快判 + LLM 多维评分，共 7 条规则，按 intent 路由子集）
+  → judge（C层主导→通过/不通过，A层永不裁决，B层降级为提示）
+  → critic（evidence 引用了原文？空证据打回重评，封顶 1 轮）
+  → 输出 JSON（label + matched_rules + evidence + reason + form_notes）
+```
+
+### 0.5 关键设计决策一览
+
+| 决策 | 选择 | 放弃 | 原因 |
+|------|------|------|------|
+| 形式信号（审批/承诺书） | advisory / conditional | 主判据 | 隐藏集 regime 不确定（原始件 vs 存档件）；出题人 intent 例子全是内容判断 |
+| 内容判断 | LLM 多维独立打分（1-5 分） | 正则/单一笼统判断 | 需要世界知识（"这个技术方法是套话还是实质"），正则做不到 |
+| 过拟合防御 | 禁指纹 + 虚构 few_shot + 不锁年份/数值 | 移除训练集表面特征 | Hint #2：LLM 天生倾向过拟合；隐藏集不会有训练集指纹 |
+| Loop 力度 | 确定性 critic + 封顶 1 轮 | 多轮 LLM 自评 | 零额外成本，防过度工程；critic 本身是"agent 编排"叙事的兑现 |
+| 部署 | Gradio share 隧道 | Cloudflare/ngrok | 零配置、零成本、NAS 不停机即可 |
+
+---
+
 ## 1. 如何处理两类数据集
 
 训练集包含两种文档类型，结构完全不同，走**类型检测 → 分流处理**：
