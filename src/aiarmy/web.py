@@ -1,8 +1,6 @@
 """
 Gradio Web 界面 — 部署入口
-工业控制台风格：暗色主题 + 电蓝色数据展示 + 琥珀色警告。
-
-v7: 前端重设计 — Industrial Command Center 美学
+v8: 多文档并发 + 翻页浏览 + 浅色专业主题
 """
 import os
 import gradio as gr
@@ -10,187 +8,234 @@ import asyncio
 import json
 import time
 
-from src.aiarmy.graph import AuditPipeline
+from src.aiarmy.graph import run_sync_quiet
 from src.aiarmy.io import to_text
 
 # ═══════════════════════════════════════
-# 全局 CSS — 暗色工业控制台
+# 全局 CSS — 浅色专业主题
 # ═══════════════════════════════════════
 
 GLOBAL_CSS = """
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;800&family=Noto+Sans+SC:wght@300;500;700&display=swap');
-
 :root {
-  --bg-deep: #080c12;
-  --bg-panel: #0f1822;
-  --bg-card: #141e2b;
-  --border: #1e3048;
-  --text-primary: #dce6f0;
-  --text-secondary: #7b8ea8;
-  --text-muted: #4a5f78;
-  --accent-blue: #00c8f0;
-  --accent-amber: #f0a800;
-  --accent-green: #00d878;
-  --accent-red: #f0444c;
-  --glow-blue: 0 0 18px rgba(0,200,240,0.3);
-  --glow-green: 0 0 18px rgba(0,216,120,0.3);
-  --glow-red: 0 0 20px rgba(240,68,76,0.4);
-  --font-mono: 'JetBrains Mono', 'Cascadia Code', monospace;
-  --font-sans: 'Noto Sans SC', system-ui, sans-serif;
+  --bg-page: #f5f5f5;
+  --bg-surface: #ffffff;
+  --bg-card: #f9fafb;
+  --border: #e5e7eb;
+  --border-light: #f0f0f0;
+  --text-primary: #1a1a2e;
+  --text-secondary: #6b7280;
+  --text-muted: #9ca3af;
+  --accent: #2563eb;
+  --accent-hover: #1d4ed8;
+  --accent-light: rgba(37, 99, 235, 0.08);
+  --pass: #059669;
+  --pass-bg: rgba(5, 150, 105, 0.06);
+  --fail: #dc2626;
+  --fail-bg: rgba(220, 38, 38, 0.05);
+  --warn: #d97706;
+  --warn-bg: rgba(217, 119, 6, 0.06);
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
+  --shadow: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-md: 0 4px 6px rgba(0,0,0,0.06), 0 2px 4px rgba(0,0,0,0.04);
+  --radius: 8px;
+  --radius-sm: 6px;
+  --font-mono: 'Cascadia Code', 'Consolas', 'JetBrains Mono', monospace;
+  --font-sans: 'Noto Sans SC', system-ui, -apple-system, sans-serif;
 }
 
 * { box-sizing: border-box; }
 
 body, .gradio-container {
-  background: var(--bg-deep) !important;
+  background: var(--bg-page) !important;
   font-family: var(--font-sans) !important;
   color: var(--text-primary) !important;
 }
 
 .gradio-container {
-  max-width: 1200px !important;
+  max-width: 1100px !important;
   margin: 0 auto !important;
-  padding: 20px 24px !important;
+  padding: 24px 20px !important;
 }
 
-/* 输入面板 */
-.panel-input {
-  background: var(--bg-panel);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 24px;
-}
+/* ── 表单控件 ── */
 
-.panel-input label, .panel-input .label-text {
-  color: var(--text-secondary) !important;
-  font-size: 12px !important;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
+.gradio-container label, .gradio-container .label-text {
+  color: var(--text-primary) !important;
+  font-size: 13px !important;
   font-weight: 600 !important;
+  margin-bottom: 4px !important;
 }
 
-/* Radio buttons */
-.gradio-container input[type="radio"] { accent-color: var(--accent-blue); }
+.gradio-container .label-text span {
+  color: var(--text-muted) !important;
+  font-weight: 400 !important;
+  font-size: 11px !important;
+}
+
+.gradio-container input[type="radio"] {
+  accent-color: var(--accent);
+}
+
 .gradio-container .radio-group {
-  background: var(--bg-card) !important;
+  background: var(--bg-surface) !important;
   border: 1px solid var(--border) !important;
-  border-radius: 8px !important;
-  padding: 8px 12px !important;
+  border-radius: var(--radius-sm) !important;
+  padding: 6px 10px !important;
 }
 
-/* File upload */
-.gradio-container .file-preview {
-  background: var(--bg-card) !important;
-  border: 2px dashed var(--border) !important;
-  border-radius: 8px !important;
-}
-
-/* Text input */
 .gradio-container textarea, .gradio-container input[type="text"] {
-  background: var(--bg-card) !important;
+  background: var(--bg-surface) !important;
   border: 1px solid var(--border) !important;
   color: var(--text-primary) !important;
-  border-radius: 6px !important;
+  border-radius: var(--radius-sm) !important;
   font-family: var(--font-mono) !important;
   font-size: 13px !important;
 }
 
 .gradio-container textarea:focus, .gradio-container input[type="text"]:focus {
-  border-color: var(--accent-blue) !important;
-  box-shadow: 0 0 0 2px rgba(0,200,240,0.15) !important;
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 3px var(--accent-light) !important;
+  outline: none !important;
 }
 
-/* Primary button */
+/* ── 文件上传 ── */
+.gradio-container .file-preview {
+  background: var(--bg-surface) !important;
+  border: 2px dashed var(--border) !important;
+  border-radius: var(--radius) !important;
+}
+
+.gradio-container .file-preview button {
+  background: var(--bg-surface) !important;
+  border: 1px solid var(--border) !important;
+  color: var(--text-secondary) !important;
+}
+
+/* ── 主按钮 ── */
 .gradio-container button.primary, .gradio-container .lg.primary {
-  background: linear-gradient(135deg, #0068a0, #0098d0) !important;
-  border: 1px solid rgba(0,200,240,0.4) !important;
+  background: var(--accent) !important;
+  border: none !important;
   color: #fff !important;
-  font-weight: 700 !important;
+  font-weight: 600 !important;
   font-size: 15px !important;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
-  border-radius: 8px !important;
-  padding: 14px 28px !important;
-  transition: all 0.2s !important;
-  box-shadow: 0 0 24px rgba(0,180,220,0.25) !important;
+  letter-spacing: 0.02em;
+  border-radius: var(--radius) !important;
+  padding: 12px 32px !important;
+  transition: background 0.15s, box-shadow 0.15s !important;
+  box-shadow: var(--shadow) !important;
 }
 
 .gradio-container button.primary:hover {
-  background: linear-gradient(135deg, #0078b8, #00a8e8) !important;
-  box-shadow: 0 0 36px rgba(0,200,240,0.45) !important;
-  transform: translateY(-1px);
+  background: var(--accent-hover) !important;
+  box-shadow: var(--shadow-md) !important;
 }
 
-/* Accordion */
-.gradio-container .accordion {
-  background: var(--bg-panel) !important;
+/* ── 次要按钮 ── */
+.gradio-container button:not(.primary):not(.lg) {
+  background: var(--bg-surface) !important;
   border: 1px solid var(--border) !important;
-  border-radius: 8px !important;
+  color: var(--text-primary) !important;
+  border-radius: var(--radius-sm) !important;
+  font-weight: 500 !important;
+  transition: background 0.15s !important;
+}
+
+.gradio-container button:not(.primary):not(.lg):hover {
+  background: var(--bg-card) !important;
+}
+
+/* ── Accordion ── */
+.gradio-container .accordion {
+  background: var(--bg-surface) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius) !important;
   margin-top: 12px !important;
+  box-shadow: var(--shadow-sm) !important;
 }
 
 .gradio-container .accordion > .label-wrap {
   color: var(--text-secondary) !important;
   font-size: 13px !important;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.02em;
+  font-weight: 600 !important;
 }
 
-/* Code block (JSON) */
+/* ── Code block ── */
 .gradio-container .codemirror-wrapper, .gradio-container .code-container {
-  background: var(--bg-deep) !important;
+  background: var(--bg-card) !important;
   border: 1px solid var(--border) !important;
-  border-radius: 6px !important;
+  border-radius: var(--radius-sm) !important;
   font-family: var(--font-mono) !important;
   font-size: 12px !important;
 }
 
-/* Hide footer */
+/* ── Checkbox ── */
+.gradio-container input[type="checkbox"] {
+  accent-color: var(--accent);
+}
+
+/* ── 隐藏 footer ── */
 footer { display: none !important; }
+
+/* ── 进度动画 ── */
+@keyframes pulse-dot {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 1; }
+}
+.pulse-dot {
+  display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+  background: var(--accent); animation: pulse-dot 1.2s ease-in-out infinite;
+  margin: 0 2px;
+}
+.pulse-dot:nth-child(2) { animation-delay: 0.2s; }
+.pulse-dot:nth-child(3) { animation-delay: 0.4s; }
 """
 
 
 # ═══════════════════════════════════════
-# HTML 模板 — 裁决结果展示
+# HTML 模板
 # ═══════════════════════════════════════
 
 def _build_result_html(file_id: str, dataset_type: str, intent: str,
                        label: str, reason: str, form_notes: str,
-                       matched: list[dict], verdicts, elapsed: float) -> str:
-    """构建裁决结果的工业控制台 HTML"""
+                       matched: list[dict], verdicts, elapsed: float,
+                       status_icon: str = "") -> str:
+    """构建裁决结果卡片（浅色主题）"""
 
     # ── 裁决牌 ──
     if label == "通过":
-        badge_color, badge_bg, badge_glow, badge_icon, badge_text = (
-            "#00d878", "rgba(0,216,120,0.08)", "var(--glow-green)", "◆", "审核通过"
+        badge_color, badge_bg, badge_icon, badge_text = (
+            "var(--pass)", "var(--pass-bg)", "#", "审核通过"
         )
-        status_bar = f"""
-        <div class="verdict-bar" style="border-color:{badge_color};background:{badge_bg};box-shadow:{badge_glow};">
-          <div class="verdict-icon" style="color:{badge_color};">{badge_icon}</div>
-          <div class="verdict-main">
-            <div class="verdict-label" style="color:{badge_color};">{badge_text}</div>
-            <div class="verdict-meta">{file_id} &nbsp;·&nbsp; {dataset_type} &nbsp;·&nbsp; {intent} &nbsp;·&nbsp; {(elapsed*1000):.0f}ms</div>
-          </div>
-        </div>"""
     else:
-        badge_color, badge_bg, badge_glow, badge_icon, badge_text = (
-            "#f0444c", "rgba(240,68,76,0.08)", "var(--glow-red)", "⬢", "审核不通过"
+        badge_color, badge_bg, badge_icon, badge_text = (
+            "var(--fail)", "var(--fail-bg)", "#", "审核不通过"
         )
-        status_bar = f"""
-        <div class="verdict-bar" style="border-color:{badge_color};background:{badge_bg};box-shadow:{badge_glow};">
-          <div class="verdict-icon" style="color:{badge_color};">{badge_icon}</div>
-          <div class="verdict-main">
-            <div class="verdict-label" style="color:{badge_color};">{badge_text}</div>
-            <div class="verdict-meta">{file_id} &nbsp;·&nbsp; {dataset_type} &nbsp;·&nbsp; {intent} &nbsp;·&nbsp; {(elapsed*1000):.0f}ms</div>
-          </div>
-        </div>"""
+
+    status_bar = f"""
+    <div class="verdict-bar" style="border-left-color:{badge_color};background:{badge_bg};">
+      <div class="verdict-icon" style="color:{badge_color};">{badge_icon} {status_icon}</div>
+      <div class="verdict-main">
+        <div class="verdict-label" style="color:{badge_color};">{badge_text}</div>
+        <div class="verdict-meta">
+          <span class="meta-tag">{file_id}</span>
+          <span class="meta-sep">·</span>
+          <span class="meta-tag">{dataset_type}</span>
+          <span class="meta-sep">·</span>
+          <span class="meta-tag">{intent}</span>
+          <span class="meta-sep">·</span>
+          <span class="meta-time">{(elapsed * 1000):.0f}ms</span>
+        </div>
+      </div>
+    </div>"""
 
     # ── 裁决理由 ──
     reason_block = ""
     if reason:
         reason_block = f"""
-        <div class="reason-section">
+        <div class="section-card">
           <div class="section-head">
-            <span class="section-dot" style="background:var(--accent-blue);box-shadow:0 0 8px var(--accent-blue);"></span>
+            <span class="section-dot" style="background:var(--accent);"></span>
             裁决理由
           </div>
           <div class="reason-text">{reason}</div>
@@ -200,15 +245,15 @@ def _build_result_html(file_id: str, dataset_type: str, intent: str,
     notes_block = ""
     if form_notes:
         notes_block = f"""
-        <div class="notes-section">
+        <div class="section-card" style="border-left:3px solid var(--warn);">
           <div class="section-head">
-            <span class="section-dot" style="background:var(--accent-amber);box-shadow:0 0 8px var(--accent-amber);"></span>
+            <span class="section-dot" style="background:var(--warn);"></span>
             形式提示
           </div>
           <div class="notes-text">{form_notes}</div>
         </div>"""
 
-    # ── 命中规则卡片 ──
+    # ── 命中规则 ──
     rules_cards = ""
     for r in matched:
         rid = r.get("rule_id", "?")
@@ -226,9 +271,9 @@ def _build_result_html(file_id: str, dataset_type: str, intent: str,
     matched_block = ""
     if rules_cards:
         matched_block = f"""
-        <div class="rules-section">
+        <div class="section-card">
           <div class="section-head">
-            <span class="section-dot" style="background:var(--accent-red);box-shadow:0 0 8px var(--accent-red);"></span>
+            <span class="section-dot" style="background:var(--text-muted);"></span>
             命中规则
           </div>
           {rules_cards}
@@ -238,17 +283,17 @@ def _build_result_html(file_id: str, dataset_type: str, intent: str,
     rows = ""
     for v in verdicts:
         v_passed = getattr(v, "passed", False)
-        v_icon = "◆" if v_passed else "⬢"
-        v_color = "var(--accent-green)" if v_passed else "var(--accent-red)"
+        v_icon = "✓" if v_passed else "✗"
+        v_color = "var(--pass)" if v_passed else "var(--fail)"
         tier = getattr(v, "tier", "content")
-        tier_badge = {"advisory": "INFO", "conditional": "WARN", "content": "CORE"}.get(tier, "")
-        tier_color = {"advisory": "#7b8ea8", "conditional": "#f0a800", "content": "#00c8f0"}.get(tier, "#7b8ea8")
+        tier_label = {"advisory": "提示", "conditional": "条件", "content": "核心"}.get(tier, "")
+        tier_color = {"advisory": "var(--text-muted)", "conditional": "var(--warn)", "content": "var(--accent)"}.get(tier, "#6b7280")
         rows += f"""
         <tr class="verdict-row">
-          <td class="td-icon"><span style="color:{v_color};">{v_icon}</span></td>
+          <td class="td-icon"><span style="color:{v_color};font-weight:700;">{v_icon}</span></td>
           <td class="td-rid"><code>{v.rule_id}</code></td>
           <td class="td-name">{v.rule_name}</td>
-          <td class="td-tier"><span style="color:{tier_color};font-size:10px;letter-spacing:0.08em;">{tier_badge}</span></td>
+          <td class="td-tier"><span style="color:{tier_color};font-size:10px;font-weight:600;">{tier_label}</span></td>
           <td class="td-evidence">{v.evidence[:120]}{'…' if len(v.evidence) > 120 else ''}</td>
           <td class="td-conf">{v.confidence:.0%}</td>
         </tr>"""
@@ -277,65 +322,77 @@ def _build_result_html(file_id: str, dataset_type: str, intent: str,
     return f"""
     <style>
       .verdict-bar {{
-        display: flex; align-items: center; gap: 18px;
-        padding: 22px 28px; border-left: 5px solid;
-        border-radius: 8px; margin-bottom: 16px;
-        font-family: var(--font-mono);
+        display: flex; align-items: center; gap: 16px;
+        padding: 20px 24px; border-left: 4px solid;
+        border-radius: var(--radius); margin-bottom: 16px;
+        background: var(--bg-surface); box-shadow: var(--shadow);
       }}
-      .verdict-icon {{ font-size: 36px; line-height: 1; }}
-      .verdict-label {{ font-size: 22px; font-weight: 800; letter-spacing: 0.04em; margin-bottom: 4px; }}
-      .verdict-meta {{ font-size: 11px; color: var(--text-muted); letter-spacing: 0.03em; }}
+      .verdict-icon {{ font-size: 28px; line-height: 1; font-weight: 700; }}
+      .verdict-label {{ font-size: 20px; font-weight: 700; margin-bottom: 4px; }}
+      .verdict-meta {{
+        display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+        font-size: 11px; color: var(--text-muted);
+      }}
+      .meta-tag {{
+        background: var(--bg-card); padding: 2px 8px; border-radius: 4px;
+        font-family: var(--font-mono); font-size: 11px;
+      }}
+      .meta-sep {{ color: var(--border); }}
+      .meta-time {{ font-family: var(--font-mono); color: var(--text-muted); }}
+      .section-card {{
+        background: var(--bg-surface); border: 1px solid var(--border);
+        border-radius: var(--radius); padding: 18px 22px; margin-bottom: 12px;
+        box-shadow: var(--shadow-sm);
+      }}
       .section-head {{
-        font-size: 12px; font-weight: 700; text-transform: uppercase;
-        letter-spacing: 0.1em; color: var(--text-secondary);
-        margin-bottom: 12px; display: flex; align-items: center; gap: 10px;
+        font-size: 12px; font-weight: 700; letter-spacing: 0.04em;
+        color: var(--text-secondary); margin-bottom: 12px;
+        display: flex; align-items: center; gap: 8px;
       }}
-      .section-dot {{ width: 7px; height: 7px; border-radius: 50%; display: inline-block; }}
-      .reason-section, .notes-section, .rules-section {{
-        background: var(--bg-card); border: 1px solid var(--border);
-        border-radius: 8px; padding: 18px 22px; margin-bottom: 12px;
-      }}
-      .reason-text {{ font-size: 14px; color: #c0d0e0; line-height: 1.75; }}
-      .notes-text {{ font-size: 13px; color: #c8a850; line-height: 1.65; }}
+      .section-dot {{ width: 7px; height: 7px; border-radius: 50%; display: inline-block; flex-shrink: 0; }}
+      .reason-text {{ font-size: 14px; color: var(--text-primary); line-height: 1.75; }}
+      .notes-text {{ font-size: 13px; color: #92400e; line-height: 1.65; }}
       .rule-card {{
-        background: var(--bg-panel); border: 1px solid var(--border);
-        border-radius: 6px; padding: 14px 18px; margin-bottom: 8px;
+        background: var(--bg-card); border: 1px solid var(--border);
+        border-radius: var(--radius-sm); padding: 12px 16px; margin-bottom: 8px;
       }}
       .rule-card-head {{ display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }}
       .rule-badge {{
-        background: #1a3048; color: var(--accent-blue); font-family: var(--font-mono);
-        font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 4px;
-        letter-spacing: 0.05em; border: 1px solid rgba(0,200,240,0.25);
+        background: var(--accent-light); color: var(--accent);
+        font-family: var(--font-mono); font-size: 11px; font-weight: 700;
+        padding: 3px 8px; border-radius: 4px; letter-spacing: 0.04em;
       }}
       .rule-name {{ font-size: 14px; font-weight: 600; color: var(--text-primary); }}
       .rule-evidence {{ font-size: 13px; color: var(--text-secondary); line-height: 1.65; }}
       .rule-evidence::before {{ content: "📎 "; font-size: 11px; }}
       .verdict-details {{ margin-top: 12px; }}
       .details-summary {{
-        cursor: pointer; font-size: 12px; font-weight: 700; text-transform: uppercase;
-        letter-spacing: 0.1em; color: var(--text-secondary);
-        padding: 12px 0; display: flex; align-items: center; gap: 10px;
+        cursor: pointer; font-size: 12px; font-weight: 600;
+        letter-spacing: 0.04em; color: var(--text-secondary);
+        padding: 12px 0; display: flex; align-items: center; gap: 8px;
       }}
       .verdict-table {{
-        width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 8px;
+        width: 100%; border-collapse: collapse; font-size: 12px;
         font-family: var(--font-mono);
       }}
       .verdict-table th {{
-        text-align: left; padding: 8px 10px; background: rgba(0,0,0,0.3);
-        color: var(--text-muted); font-size: 10px; text-transform: uppercase;
-        letter-spacing: 0.08em; font-weight: 600;
+        text-align: left; padding: 8px 10px; background: var(--bg-card);
+        color: var(--text-muted); font-size: 10px; letter-spacing: 0.06em;
+        font-weight: 600;
       }}
-      .verdict-table td {{ padding: 7px 10px; border-bottom: 1px solid rgba(30,48,72,0.5); }}
-      .verdict-row:hover {{ background: rgba(0,200,240,0.03); }}
-      .td-icon {{ width: 28px; text-align: center; font-size: 14px; }}
+      .verdict-table td {{
+        padding: 7px 10px; border-bottom: 1px solid var(--border-light);
+      }}
+      .verdict-row:hover {{ background: var(--accent-light); }}
+      .td-icon {{ width: 28px; text-align: center; }}
       .td-rid {{ width: 52px; }}
       .td-rid code {{
-        background: rgba(0,0,0,0.3); color: var(--accent-blue);
+        background: var(--accent-light); color: var(--accent);
         padding: 2px 6px; border-radius: 3px; font-size: 11px;
       }}
       .td-name {{ color: var(--text-primary); font-weight: 500; }}
       .td-tier {{ width: 50px; }}
-      .td-evidence {{ color: var(--text-secondary); max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
+      .td-evidence {{ color: var(--text-secondary); max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
       .td-conf {{ width: 55px; text-align: center; color: var(--text-muted); }}
       .th-icon {{ width: 28px; }} .th-rid {{ width: 52px; }} .th-tier {{ width: 50px; }}
       .th-conf {{ width: 55px; text-align: center; }}
@@ -348,67 +405,97 @@ def _build_result_html(file_id: str, dataset_type: str, intent: str,
     """
 
 
+def _build_empty_html() -> str:
+    """首页空白状态"""
+    return """
+    <div class="empty-state">
+      <div class="empty-icon">📋</div>
+      <div class="empty-text">上传文档开始审核</div>
+      <div class="empty-sub">支持 .docx / .doc / .txt，多文件批量处理</div>
+    </div>
+    """
+
+
+def _build_progress_html(done: int, total: int, filenames: list[str]) -> str:
+    """处理中进度 HTML"""
+    items = ""
+    for i, name in enumerate(filenames):
+        if i < done:
+            icon = '<span style="color:var(--pass);">✓</span>'
+            cls = 'progress-item done'
+        elif i == done:
+            icon = '<span class="pulse-dot"></span><span class="pulse-dot"></span><span class="pulse-dot"></span>'
+            cls = 'progress-item active'
+        else:
+            icon = '<span style="color:var(--border);">○</span>'
+            cls = 'progress-item pending'
+        items += f'<div class="{cls}">{icon} <span>{name}</span></div>'
+
+    return f"""
+    <style>
+      .progress-container {{
+        background: var(--bg-surface); border: 1px solid var(--border);
+        border-radius: var(--radius); padding: 24px;
+        box-shadow: var(--shadow);
+      }}
+      .progress-title {{
+        font-size: 15px; font-weight: 600; color: var(--text-primary);
+        margin-bottom: 16px; display: flex; align-items: center; gap: 8px;
+      }}
+      .progress-item {{
+        display: flex; align-items: center; gap: 10px;
+        padding: 10px 14px; font-size: 13px; font-family: var(--font-mono);
+        border-radius: var(--radius-sm);
+      }}
+      .progress-item.done {{ color: var(--text-secondary); }}
+      .progress-item.active {{ color: var(--accent); font-weight: 600; background: var(--accent-light); }}
+      .progress-item.pending {{ color: var(--text-muted); }}
+    </style>
+    <div class="progress-container">
+      <div class="progress-title">⏳ 处理中（{done}/{total}）</div>
+      {items}
+    </div>
+    """
+
+
+def _build_error_html(filename: str, error: str) -> str:
+    """单文档处理错误"""
+    return f"""
+    <div class="error-banner">
+      <span class="error-icon">!</span>
+      <div>
+        <div class="error-title">{filename}</div>
+        <div class="error-detail">{error}</div>
+      </div>
+    </div>
+    """
+
+
 # ═══════════════════════════════════════
 # 处理函数
 # ═══════════════════════════════════════
 
-async def process_document(file, dataset_type: str, intent: str, use_llm: bool = True):
-    """处理上传文档，返回 (html, markdown_summary, json_raw)"""
-    t0 = time.time()
-
-    if file is None:
-        return (
-            '<div class="empty-state"><div class="empty-icon">⬆</div><div>上传文档开始审核</div><div class="empty-sub">支持 .docx / .txt</div></div>',
-            "", "{}"
-        )
-
-    if hasattr(file, "name"):
-        path = file.name
-    else:
-        path = str(file)
-
-    try:
-        raw_text = to_text(path)
-    except Exception as e:
-        return (
-            f'<div class="error-banner"><span class="error-icon">!</span><div><div class="error-title">文件读取失败</div><div class="error-detail">{e}</div></div></div>',
-            "", "{}"
-        )
-
-    if not raw_text.strip():
-        return (
-            '<div class="error-banner"><span class="error-icon">!</span><div><div class="error-title">文件内容为空</div><div class="error-detail">请检查文件是否损坏</div></div></div>',
-            "", "{}"
-        )
-
-    # 类型：自动检测时不传 override，让 parse 自己判定
-    override = None if dataset_type == "自动检测" else dataset_type
-
-    pipeline = AuditPipeline(use_llm=use_llm)
-    state = await pipeline.run(raw_text, intent, doc_type_override=override)
-    elapsed = time.time() - t0
-
-    # 实际使用的类型（自动检测结果）
-    actual_type = state.doc_type.value if state.doc_type else (override or "未知")
-
+def _state_to_result(state, filename: str, file_id: str, dataset_type: str,
+                     intent: str, elapsed: float, status_icon: str = "") -> dict:
+    """将 PipelineState 转为前端可用的 dict"""
     if state.error:
-        return (
-            f'<div class="error-banner"><span class="error-icon">!</span><div><div class="error-title">管线错误</div><div class="error-detail">{state.error}</div></div></div>',
-            "", "{}"
-        )
+        return {
+            "filename": filename, "file_id": file_id,
+            "error": state.error, "label": "错误",
+        }
+    actual_type = state.doc_type.value if state.doc_type else (dataset_type or "未知")
 
-    file_id = os.path.splitext(os.path.basename(path))[0]
-    label = state.result.label if state.result else "错误"
-    reason = state.result.reason if state.result else ""
-    form_notes = state.result.form_notes if state.result else ""
-
-    # 类型提示：自动检测 vs 手动选择
+    # 类型展示
     if dataset_type == "自动检测":
         type_display = f"🔍 {actual_type}"
     else:
         type_display = actual_type
-        if actual_type != dataset_type:
-            type_display += f"（⚠️ 文档标题指示为「{actual_type}」，评委手动选择「{dataset_type}」）"
+        if actual_type != dataset_type and actual_type != "未知":
+            type_display += f"（⚠️ 文档标题指示为「{actual_type}」）"
+
+    label = state.result.label if state.result else "错误"
+    reason = state.result.reason if state.result else ""
+    form_notes = state.result.form_notes if state.result else ""
 
     # 匹配规则
     if state.result and state.result.matched_rules:
@@ -420,12 +507,23 @@ async def process_document(file, dataset_type: str, intent: str, use_llm: bool =
     else:
         matched = []
 
-    # HTML 展示
-    html = _build_result_html(file_id, type_display, intent, label, reason, form_notes,
-                               matched, state.verdicts, elapsed)
+    # 完整 JSON
+    verdicts_data = [
+        {"rule_id": v.rule_id, "rule_name": v.rule_name, "passed": v.passed,
+         "evidence": v.evidence, "confidence": f"{v.confidence:.0%}"}
+        for v in state.verdicts
+    ]
+    detail_json = json.dumps({
+        "id": file_id, "dataset_type": actual_type, "intent": intent,
+        "label": label, "matched_rules": matched, "reason": reason,
+        "form_notes": form_notes, "verdicts": verdicts_data,
+        "elapsed_ms": round(elapsed * 1000),
+    }, ensure_ascii=False, indent=2)
 
     # Markdown 摘要
-    md_parts = [f"## {label}", "", f"*{file_id} · {dataset_type} · {intent} · {elapsed*1000:.0f}ms*", "", "---", ""]
+    md_parts = [f"## {label}", "",
+                f"*{file_id} · {type_display} · {intent} · {elapsed * 1000:.0f}ms*",
+                "", "---", ""]
     if reason:
         md_parts.append(f"### 裁决理由\n\n{reason}\n")
     if form_notes:
@@ -434,22 +532,152 @@ async def process_document(file, dataset_type: str, intent: str, use_llm: bool =
         md_parts.append("### 命中规则\n")
         for r in matched:
             md_parts.append(f"- **{r.get('rule_id')} {r.get('rule_name')}**\n  {r.get('evidence')}\n")
-    reason_md = "\n".join(md_parts)
 
-    # 完整 JSON
-    verdicts_data = [
-        {"rule_id": v.rule_id, "rule_name": v.rule_name, "passed": v.passed,
-         "evidence": v.evidence, "confidence": f"{v.confidence:.0%}"}
-        for v in state.verdicts
-    ]
-    detail = {
-        "id": file_id, "dataset_type": actual_type, "intent": intent,
-        "label": label, "matched_rules": matched, "reason": reason,
-        "form_notes": form_notes, "verdicts": verdicts_data,
-        "elapsed_ms": round(elapsed * 1000),
+    return {
+        "filename": filename, "file_id": file_id,
+        "type_display": type_display, "actual_type": actual_type,
+        "label": label, "reason": reason, "form_notes": form_notes,
+        "matched": matched, "verdicts_raw": state.verdicts,
+        "verdicts_data": verdicts_data,
+        "elapsed": elapsed, "html": "", "reason_md": "\n".join(md_parts),
+        "json_raw": detail_json, "status_icon": status_icon,
     }
 
-    return html, reason_md, json.dumps(detail, ensure_ascii=False, indent=2)
+
+async def process_batch(files, dataset_type: str, intent: str, use_llm: bool):
+    """多文档并发处理 → (state_dict, html, page_info, reason_md, json_str, progress_html)"""
+    if files is None:
+        return (
+            {"results": [], "page": 0, "dataset_type": "", "intent": ""},
+            _build_empty_html(), "", "", "{}", ""
+        )
+
+    if not isinstance(files, list):
+        files = [files]
+
+    t0 = time.time()
+    override = None if dataset_type == "自动检测" else dataset_type
+    sem = asyncio.Semaphore(3)
+
+    async def process_one(idx: int, file):
+        async with sem:
+            try:
+                if hasattr(file, 'name'):
+                    path = file.name
+                else:
+                    path = str(file)
+
+                filename = os.path.basename(path)
+                file_id = os.path.splitext(filename)[0]
+
+                raw_text = to_text(path)
+                if not raw_text.strip():
+                    return (idx, {
+                        "filename": filename, "file_id": file_id,
+                        "error": "文件内容为空", "label": "错误",
+                    })
+
+                loop = asyncio.get_running_loop()
+                state = await loop.run_in_executor(
+                    None, run_sync_quiet, raw_text, intent, use_llm, override
+                )
+                elapsed = time.time() - t0
+                result = _state_to_result(
+                    state, filename, file_id, dataset_type, intent, elapsed,
+                    status_icon=f"#{idx+1}"
+                )
+                return (idx, result)
+
+            except Exception as e:
+                filename = os.path.basename(file.name) if hasattr(file, 'name') else str(file)
+                file_id = os.path.splitext(filename)[0]
+                return (idx, {
+                    "filename": filename, "file_id": file_id,
+                    "error": str(e), "label": "错误",
+                })
+
+    # 启动所有任务
+    tasks = [process_one(i, f) for i, f in enumerate(files)]
+
+    # 逐个收集结果
+    results = [None] * len(files)
+    for coro in asyncio.as_completed(tasks):
+        idx, result = await coro
+        results[idx] = result
+
+    # 构建 HTML
+    for r in results:
+        if r and not r.get("error"):
+            r["html"] = _build_result_html(
+                r["file_id"], r["type_display"], intent,
+                r["label"], r.get("reason", ""), r.get("form_notes", ""),
+                r.get("matched", []), r.get("verdicts_raw", []),
+                r.get("elapsed", 0), r.get("status_icon", "")
+            )
+        elif r and r.get("error"):
+            r["html"] = _build_error_html(r["filename"], r["error"])
+            r["reason_md"] = f"## 错误\n\n{r['error']}"
+            r["json_raw"] = json.dumps({"error": r["error"], "file": r["filename"]},
+                                       ensure_ascii=False, indent=2)
+
+    state = {
+        "results": results,
+        "page": 0,
+        "dataset_type": dataset_type,
+        "intent": intent,
+        "total_elapsed": time.time() - t0,
+    }
+
+    # 渲染第一页
+    first = results[0] if results else None
+    if first:
+        return (
+            state,
+            first.get("html", _build_empty_html()),
+            f"第 1 / {len(results)} 份 · **{first.get('filename', '')}**",
+            first.get("reason_md", ""),
+            first.get("json_raw", "{}"),
+            ""
+        )
+    else:
+        return (
+            state,
+            '<div class="empty-state"><div class="empty-icon">⚠️</div><div class="empty-text">没有文件被处理</div></div>',
+            "", "", "{}", ""
+        )
+
+
+def render_page(state: dict, direction: int):
+    """翻页渲染。direction: -1 prev, +1 next, 0 当前页"""
+    if not state or not state.get("results"):
+        return state, _build_empty_html(), "", "", "{}"
+
+    results = state["results"]
+    if not results:
+        return state, _build_empty_html(), "", "", "{}"
+
+    new_page = state.get("page", 0) + direction
+    new_page = max(0, min(new_page, len(results) - 1))
+    state["page"] = new_page
+
+    r = results[new_page]
+    return (
+        state,
+        r.get("html", _build_empty_html()),
+        f"第 {new_page + 1} / {len(results)} 份 · **{r.get('filename', '')}**",
+        r.get("reason_md", ""),
+        r.get("json_raw", "{}"),
+    )
+
+
+def go_home():
+    """返回首页"""
+    return (
+        {"results": [], "page": 0, "dataset_type": "", "intent": ""},
+        _build_empty_html(), "", "", "{}",
+        gr.update(visible=True),   # input_col
+        gr.update(visible=False),  # result_col
+    )
 
 
 # ═══════════════════════════════════════
@@ -458,75 +686,79 @@ async def process_document(file, dataset_type: str, intent: str, use_llm: bool =
 
 def build_ui():
     with gr.Blocks(title="AI 军团 — 电力项目立项审核") as app:
+        batch_state = gr.State({"results": [], "page": 0})
 
         # ── 标题 ──
         gr.HTML("""
-        <div style="padding:8px 0 24px 0;">
-          <div style="display:flex;align-items:center;gap:14px;">
-            <div style="width:3px;height:36px;background:var(--accent-blue);box-shadow:0 0 12px var(--accent-blue);border-radius:2px;"></div>
-            <div>
-              <div style="font-family:var(--font-mono);font-size:22px;font-weight:800;color:var(--text-primary);letter-spacing:0.02em;">
-                AI 军团
-                <span style="color:var(--accent-blue);">·</span>
-                <span style="font-weight:400;color:var(--text-secondary);">电力项目立项审核系统</span>
-              </div>
-              <div style="font-family:var(--font-mono);font-size:10px;color:var(--text-muted);letter-spacing:0.12em;margin-top:2px;">
-                INDUSTRIAL COMMAND CENTER &nbsp;v5 — META-RULE FRAMEWORK
-              </div>
+        <div style="padding:4px 0 20px 0;display:flex;align-items:center;gap:12px;">
+          <div style="width:3px;height:28px;background:var(--accent);border-radius:2px;"></div>
+          <div>
+            <div style="font-family:var(--font-mono);font-size:20px;font-weight:700;color:var(--text-primary);">
+              AI 军团
+              <span style="color:var(--accent);font-weight:600;">·</span>
+              <span style="font-weight:500;color:var(--text-secondary);">电力项目立项审核系统</span>
+            </div>
+            <div style="font-family:var(--font-mono);font-size:10px;color:var(--text-muted);letter-spacing:0.06em;margin-top:2px;">
+              MULTI-DOCUMENT REVIEW · META-RULE FRAMEWORK v6
             </div>
           </div>
         </div>
         """)
 
-        # ── 主布局 ──
-        with gr.Row(equal_height=True):
-            # 左栏：输入
-            with gr.Column(scale=4, min_width=300):
-                with gr.Group():
-                    dataset_type = gr.Radio(
-                        choices=["自动检测", "计划任务书", "立项申请书"],
-                        label="数据集类型",
-                        value="自动检测",
-                        info="「自动检测」由系统根据文档标题判定；评委也可手动指定",
-                    )
-                    file_input = gr.File(
-                        label="上传文档",
-                        file_types=[".docx", ".txt"],
-                    )
-                    intent_input = gr.Textbox(
-                        label="评审意图",
-                        placeholder="综合评审 / 判断创新程度 / 材料完整性审查",
-                        value="综合评审",
-                    )
-                    llm_toggle = gr.Checkbox(
-                        label="LLM 深度分析",
-                        value=True,
-                        info="关闭后仅使用规则引擎",
-                    )
-                    submit_btn = gr.Button("▶ 开始审核", variant="primary", size="lg")
-
-            # 右栏：结果
-            with gr.Column(scale=7, min_width=480):
-                html_output = gr.HTML(
-                    value='<div class="empty-state"><div class="empty-icon">⬢</div><div>等待审核</div><div class="empty-sub">上传文档并点击「开始审核」</div></div>'
+        # ── 输入区域 ──
+        with gr.Column(visible=True) as input_col:
+            with gr.Group():
+                dataset_type = gr.Radio(
+                    choices=["自动检测", "计划任务书", "立项申请书"],
+                    label="数据集类型",
+                    value="自动检测",
+                    info="「自动检测」由系统根据文档标题判定；评委也可手动指定",
                 )
-                with gr.Accordion("裁决摘要", open=True):
-                    reason_output = gr.Markdown("*等待提交...*")
-                with gr.Accordion("完整 JSON", open=False):
-                    json_output = gr.Code(language="json", label="")
+                file_input = gr.File(
+                    label="上传文档",
+                    file_count="multiple",
+                    file_types=[".docx", ".doc", ".txt"],
+                )
+                intent_input = gr.Textbox(
+                    label="评审意图",
+                    placeholder="综合评审 / 判断创新程度 / 材料完整性审查",
+                    value="综合评审",
+                )
+                llm_toggle = gr.Checkbox(
+                    label="LLM 深度分析",
+                    value=True,
+                    info="关闭后仅使用规则引擎",
+                )
+                submit_btn = gr.Button("▶ 开始审核", variant="primary", size="lg")
 
-        submit_btn.click(
-            fn=lambda f, dt, i, llm: asyncio.run(process_document(f, dt, i, llm)),
-            inputs=[file_input, dataset_type, intent_input, llm_toggle],
-            outputs=[html_output, reason_output, json_output],
-        )
+        # ── 结果区域 ──
+        with gr.Column(visible=False) as result_col:
+            # 进度/状态
+            progress_html = gr.HTML("")
 
-        # ── 底部状态栏 ──
+            # 导航
+            with gr.Row():
+                prev_btn = gr.Button("← 上一份", scale=1)
+                page_info = gr.Markdown("", elem_classes=["page-info"], visible=True)
+                next_btn = gr.Button("下一份 →", scale=1)
+
+            # 裁决结果卡片
+            html_output = gr.HTML()
+
+            with gr.Accordion("裁决摘要", open=True):
+                reason_output = gr.Markdown("*等待提交...*")
+            with gr.Accordion("完整 JSON", open=False):
+                json_output = gr.Code(language="json", label="")
+
+            # 返回按钮
+            back_btn = gr.Button("← 返回首页", variant="secondary", size="sm")
+
+        # ── 底部 ──
         gr.HTML("""
-        <div style="margin-top:28px;padding-top:14px;border-top:1px solid var(--border);
+        <div style="margin-top:24px;padding-top:12px;border-top:1px solid var(--border);
                     font-family:var(--font-mono);font-size:10px;color:var(--text-muted);
-                    display:flex;justify-content:space-between;letter-spacing:0.04em;">
-          <span>sanitize → parse → match → judge → critic ⇄ match</span>
+                    display:flex;justify-content:space-between;letter-spacing:0.03em;">
+          <span>sanitize → parse → match → judge → critic ⇄ match &nbsp;|&nbsp; 并发 3 · 翻页浏览</span>
           <span>M1 内容优先 &nbsp; M2 数据非指令 &nbsp; M3 必要非充分 &nbsp; M4 regime 感知</span>
         </div>
         """)
@@ -536,26 +768,59 @@ def build_ui():
         <style>
           .empty-state {
             display: flex; flex-direction: column; align-items: center; justify-content: center;
-            height: 280px; color: var(--text-muted); gap: 10px;
-            background: var(--bg-panel); border: 2px dashed var(--border); border-radius: 10px;
+            height: 200px; color: var(--text-muted); gap: 8px;
+            background: var(--bg-surface); border: 2px dashed var(--border); border-radius: var(--radius);
           }
-          .empty-icon { font-size: 48px; opacity: 0.3; }
-          .empty-sub { font-size: 12px; opacity: 0.5; }
+          .empty-icon { font-size: 36px; opacity: 0.5; }
+          .empty-text { font-size: 15px; font-weight: 500; color: var(--text-secondary); }
+          .empty-sub { font-size: 12px; opacity: 0.6; }
           .error-banner {
             display: flex; align-items: flex-start; gap: 16px;
-            padding: 20px 24px; background: rgba(240,68,76,0.08);
-            border-left: 4px solid var(--accent-red); border-radius: 6px;
-            box-shadow: 0 0 20px rgba(240,68,76,0.15);
+            padding: 20px 24px; background: var(--fail-bg);
+            border-left: 4px solid var(--fail); border-radius: var(--radius);
+            box-shadow: var(--shadow-sm);
           }
           .error-icon {
-            width: 32px; height: 32px; background: var(--accent-red); color: #fff;
+            width: 32px; height: 32px; background: var(--fail); color: #fff;
             border-radius: 50%; display: flex; align-items: center; justify-content: center;
             font-weight: 800; font-size: 18px; flex-shrink: 0;
           }
-          .error-title { font-weight: 700; font-size: 15px; color: var(--accent-red); margin-bottom: 4px; }
+          .error-title { font-weight: 700; font-size: 15px; color: var(--fail); margin-bottom: 4px; }
           .error-detail { font-size: 13px; color: var(--text-secondary); font-family: var(--font-mono); }
         </style>
         """)
+
+        # ══ 事件绑定 ══
+
+        # 提交
+        submit_btn.click(
+            fn=lambda f, dt, i, llm: asyncio.run(process_batch(f, dt, i, llm)),
+            inputs=[file_input, dataset_type, intent_input, llm_toggle],
+            outputs=[batch_state, html_output, page_info, reason_output, json_output, progress_html],
+        ).then(
+            fn=lambda: (gr.update(visible=False), gr.update(visible=True)),
+            outputs=[input_col, result_col],
+        )
+
+        # 翻页
+        prev_btn.click(
+            fn=lambda s: render_page(s, -1),
+            inputs=[batch_state],
+            outputs=[batch_state, html_output, page_info, reason_output, json_output],
+        )
+
+        next_btn.click(
+            fn=lambda s: render_page(s, +1),
+            inputs=[batch_state],
+            outputs=[batch_state, html_output, page_info, reason_output, json_output],
+        )
+
+        # 返回首页
+        back_btn.click(
+            fn=go_home,
+            outputs=[batch_state, html_output, page_info, reason_output, json_output,
+                     input_col, result_col],
+        )
 
     return app
 

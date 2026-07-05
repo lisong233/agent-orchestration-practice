@@ -227,3 +227,11 @@ def run_sync(raw_text: str, intent: str = "综合评审", use_llm: bool = True,
     pipeline = AuditPipeline(use_llm=use_llm)
     return asyncio.run(pipeline.run(raw_text, intent,
                                     doc_type_override=doc_type_override))
+
+
+def run_sync_quiet(raw_text: str, intent: str = "综合评审", use_llm: bool = True,
+                   doc_type_override: str | None = None) -> PipelineState:
+    """同步入口（静默模式）— 供线程池并发使用，不打印日志"""
+    pipeline = AuditPipeline(use_llm=use_llm)
+    return asyncio.run(pipeline.run(raw_text, intent, verbose=False,
+                                    doc_type_override=doc_type_override))
