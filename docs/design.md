@@ -39,10 +39,20 @@ flowchart LR
     A3 --> N1
 
     subgraph 规则库
-        R["📁 rules/<br/>├── 立项申请书/<br/>│   ├── R01 审批(advisory)<br/>│   ├── R02 承诺书(conditional)<br/>│   ├── R03 技术方案(content)<br/>│   └── R04 预算(content)<br/>└── 计划任务书/<br/>    ├── R05 模板(conditional)<br/>    ├── R06 团队(conditional)<br/>    └── R07 内容质量(content)"]
+        subgraph 立项申请书
+            R01["🅰️ R01 审批<br/>advisory"]
+            R02["🅱️ R02 承诺书<br/>conditional"]
+            R03["🅲 R03 技术方案<br/>content"]
+            R04["🅲 R04 预算<br/>content"]
+        end
+        subgraph 计划任务书
+            R05["🅱️ R05 模板<br/>conditional"]
+            R06["🅱️ R06 团队<br/>conditional"]
+            R07["🅲 R07 内容质量<br/>content"]
+        end
     end
 
-    R --> N2
+    规则库 --> N2
 ```
 
 ### 0.2 裁决引擎：tier 三分层 → 硬标签
