@@ -16,17 +16,14 @@
 git clone https://github.com/lisong233/agent-orchestration-practice.git
 cd agent-orchestration-practice
 
-# 安装依赖
-pip install -r requirements.txt
+# Linux / macOS
+bash docs/setup.sh
 
-# 配置 API Key
-cp .env.example .env
-# 编辑 .env 填入真实 DEEPSEEK_API_KEY
-
-# 启动 Web 界面
-python -m src.aiarmy.web
-# 浏览器打开 http://localhost:7860
+# Windows PowerShell
+powershell -ExecutionPolicy Bypass -File docs/setup.ps1
 ```
+
+脚本自动完成：创建 venv → 安装依赖 → 提示填 API Key → 启动服务，浏览器打开 `http://localhost:7860`。
 
 **评委操作流程**：上传多份 .docx → 选类型/输意图 → 点"开始审核" → 翻页浏览每条结果
 
