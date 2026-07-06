@@ -799,7 +799,13 @@ def build_ui():
                     placeholder="综合评审 / 判断创新程度 / 材料完整性审查",
                     value="综合评审",
                 )
-                with gr.Accordion("⚙️ API 设置", open=False):
+                access_pwd = gr.Textbox(
+                    label="🔑 访问密码",
+                    placeholder="输入密码以解锁无限制使用",
+                    type="password",
+                    info="⚠️ 不输入密码：每 IP 仅限使用 1 次。输入正确密码后无限制。",
+                )
+                with gr.Accordion("⚙️ API 设置（可选）", open=False):
                     api_key_input = gr.Textbox(
                         label="API Key",
                         placeholder="sk-...（留空使用默认）",
@@ -823,11 +829,6 @@ def build_ui():
                             visible=False,
                             scale=3,
                         )
-                    access_pwd = gr.Textbox(
-                        label="访问密码（可选）",
-                        placeholder="输入密码以解锁无限制使用",
-                        type="password",
-                    )
                     gr.Markdown("*填入 API Key 后须同时填写 Base URL 和模型；留空则使用服务端默认 DeepSeek 配置*")
                 llm_toggle = gr.Checkbox(
                     label="LLM 深度分析",
