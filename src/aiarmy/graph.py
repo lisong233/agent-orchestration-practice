@@ -231,12 +231,14 @@ def run_sync(raw_text: str, intent: str = "综合评审", use_llm: bool = True,
 
 def run_sync_quiet(raw_text: str, intent: str = "综合评审", use_llm: bool = True,
                    doc_type_override: str | None = None,
-                   api_key: str | None = None) -> PipelineState:
+                   api_key: str | None = None,
+                   base_url: str | None = None,
+                   model: str | None = None) -> PipelineState:
     """同步入口（静默模式）— 供线程池并发使用，不打印日志。
-    api_key 可选：评委自定义 DeepSeek Key，传入则覆写 .env 默认。"""
+    api_key/base_url/model 可选：评委自定义 LLM 配置，传入则覆写 .env 默认。"""
     from src.aiarmy.llm import set_override, clear_override
     if api_key:
-        set_override(api_key=api_key)
+        set_override(api_key=api_key, base_url=base_url, model=model)
     try:
         pipeline = AuditPipeline(use_llm=use_llm)
         return asyncio.run(pipeline.run(raw_text, intent, verbose=False,

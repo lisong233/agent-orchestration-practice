@@ -564,9 +564,9 @@ def _state_to_result(state, filename: str, file_id: str, dataset_type: str,
 
 
 async def process_batch(files, dataset_type: str, intent: str, use_llm: bool,
-                       api_key: str = ""):
+                       api_key: str = "", base_url: str = "", model: str = ""):
     """多文档并发处理 → (state_dict, html, page_info, reason_md, json_str, progress_html)
-    api_key 可选：评委自定义 DeepSeek Key，留空使用 .env 默认。"""
+    api_key 可选：评委自定义 LLM 配置（key + url + model 三件套），留空使用 .env 默认。"""
     if files is None:
         return (
             {"results": [], "page": 0, "dataset_type": "", "intent": ""},
@@ -600,8 +600,10 @@ async def process_batch(files, dataset_type: str, intent: str, use_llm: bool,
 
                 loop = asyncio.get_running_loop()
                 key = api_key.strip() if api_key else None
+                url = base_url.strip() if api_key else None
+                mdl = model.strip() if api_key else None
                 state = await loop.run_in_executor(
-                    None, run_sync_quiet, raw_text, intent, use_llm, override, key
+                    None, run_sync_quiet, raw_text, intent, use_llm, override, key, url, mdl
                 )
                 elapsed = time.time() - t0
                 result = _state_to_result(
@@ -748,11 +750,29 @@ def build_ui():
                 )
                 with gr.Accordion("⚙️ API 设置", open=False):
                     api_key_input = gr.Textbox(
-                        label="DeepSeek API Key",
-                        placeholder="sk-...（留空使用默认 Key）",
+                        label="API Key",
+                        placeholder="sk-...（留空使用默认）",
                         type="password",
-                        info="评委可填入自己的 DeepSeek Key，留空则使用服务端默认配置",
                     )
+                    api_url_input = gr.Textbox(
+                        label="Base URL",
+                        placeholder="https://api.deepseek.com/anthropic",
+                        value="https://api.deepseek.com/anthropic",
+                    )
+                    with gr.Row():
+                        model_preset = gr.Dropdown(
+                            label="模型",
+                            choices=["deepseek-v4-flash", "deepseek-v4-pro", "自定义..."],
+                            value="deepseek-v4-flash",
+                            scale=2,
+                        )
+                        model_custom = gr.Textbox(
+                            label="自定义模型名",
+                            placeholder="输入模型 ID",
+                            visible=False,
+                            scale=3,
+                        )
+                    gr.Markdown("*填入 API Key 后须同时填写 Base URL 和模型；留空则使用服务端默认 DeepSeek 配置*")
                 llm_toggle = gr.Checkbox(
                     label="LLM 深度分析",
                     value=True,
@@ -821,10 +841,21 @@ def build_ui():
 
         # ══ 事件绑定 ══
 
+        # 模型预设切换 → 显示/隐藏自定义输入
+        model_preset.change(
+            fn=lambda v: gr.update(visible=(v == "自定义...")),
+            inputs=[model_preset],
+            outputs=[model_custom],
+        )
+
         # 提交
         submit_btn.click(
-            fn=lambda f, dt, i, llm, key: asyncio.run(process_batch(f, dt, i, llm, key)),
-            inputs=[file_input, dataset_type, intent_input, llm_toggle, api_key_input],
+            fn=lambda f, dt, i, llm, key, url, preset, custom: asyncio.run(
+                process_batch(f, dt, i, llm, key, url,
+                              custom if preset == "自定义..." else preset)
+            ),
+            inputs=[file_input, dataset_type, intent_input, llm_toggle,
+                    api_key_input, api_url_input, model_preset, model_custom],
             outputs=[batch_state, html_output, page_info, reason_output, json_output, progress_html],
         ).then(
             fn=lambda: (gr.update(visible=False), gr.update(visible=True)),

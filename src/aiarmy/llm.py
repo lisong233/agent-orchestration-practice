@@ -121,6 +121,11 @@ def _get_text(resp) -> str:
     return ""
 
 
+def _effective_model(model: str | None = None) -> str:
+    """返回实际使用的模型名：运行时覆写 > 显式传参 > 模块默认"""
+    return _override.model or model or _MODEL
+
+
 def chat_json(
     system: str,
     user: str,
@@ -129,10 +134,10 @@ def chat_json(
     temperature: float = 0.1,
     max_tokens: int = 2000,
 ) -> dict:
-    """发送 chat 请求并返回 JSON 解析结果。model/backend 不传则用模块默认。"""
+    """发送 chat 请求并返回 JSON 解析结果。model 优先级：覆写 > 传参 > 默认。"""
     client = get_client(backend)
     resp = client.messages.create(
-        model=model or _MODEL,
+        model=_effective_model(model),
         max_tokens=max_tokens,
         temperature=temperature,
         system=system,
@@ -153,7 +158,7 @@ def chat_text(
     """发送 chat 请求并返回纯文本"""
     client = get_client(backend)
     resp = client.messages.create(
-        model=model or _MODEL,
+        model=_effective_model(model),
         max_tokens=max_tokens,
         temperature=temperature,
         system=system,
