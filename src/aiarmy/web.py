@@ -192,11 +192,13 @@ footer { display: none !important; }
 .pulse-dot:nth-child(2) { animation-delay: 0.2s; }
 .pulse-dot:nth-child(3) { animation-delay: 0.4s; }
 
-/* ── 强制浅色：无视系统暗色主题 ── */
+/* ── 强制浅色：无视系统暗色主题（Gradio Svelte wrapper 在 dark 下注 #1f2937）── */
 @media (prefers-color-scheme: dark) {
-  body, .gradio-container, .gradio-container .block,
+  html, body, .gradio-container, .gradio-container .block,
   .gradio-container .panel, .gradio-container .group,
-  .gradio-container .form, .gradio-container .wrap {
+  .gradio-container .form, .gradio-container .wrap,
+  .gradio-container .center, .gradio-container .full,
+  .gradio-container main, .gradio-container [class*="svelte"] {
     background: var(--bg-page) !important;
     color: var(--text-primary) !important;
   }
@@ -844,4 +846,19 @@ def build_ui():
 
 if __name__ == "__main__":
     ui = build_ui()
-    ui.launch(server_name="0.0.0.0", server_port=7860, share=True, css=GLOBAL_CSS)
+    ui.launch(
+        server_name="0.0.0.0", server_port=7860, share=True,
+        theme=gr.themes.Soft(),
+        css=GLOBAL_CSS,
+        head="""
+        <script>
+        (function() {
+            var params = new URLSearchParams(window.location.search);
+            if (!params.has('__theme')) {
+                params.set('__theme', 'light');
+                window.location.search = params.toString();
+            }
+        })();
+        </script>
+        """,
+    )
