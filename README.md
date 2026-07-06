@@ -97,17 +97,9 @@ docker compose up -d --build
 # http://localhost:7860
 ```
 
-### NAS 远端
+### 远端服务器
 
-详见 `docs/nas-ops.md`。
-
-```bash
-# 推送代码
-cat src/aiarmy/web.py | ssh nas-wan "cat > /volume1/docker/aiarmy/src/aiarmy/web.py"
-
-# 重建
-ssh nas-wan "cd /volume1/docker/aiarmy && docker compose up -d --build"
-```
+源码打进 Docker 镜像，部署即 `docker compose up -d --build`。详见 `docs/nas-ops.md`。
 
 ## 许可
 
