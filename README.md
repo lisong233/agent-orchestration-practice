@@ -75,7 +75,8 @@ Gradio Web · 浅色主题 · 多文档并发 3 · 翻页浏览
 - `eval/backtest.py` — 完整评估脚本（混淆矩阵 + Precision/Recall/F1）
 - `tests/` — 三条路 / 反指纹 / 合成样本 / Intent 路由测试（19/19 全绿）
 - `docs/design.md` — 系统设计文档（含元规则双层框架 + 诚实基线 + 部署方案）
-- `docs/nas-ops.md` — NAS 部署运维手册（rebuild + frpc 踩坑 SOP）
+- `docs/guide.md` — 构建指南（面向技术人员，讲清系统设计与开发历程）
+- `docs/nas-ops.md` — NAS 部署运维手册
 - `docs/setup.sh` / `docs/setup.ps1` — 评委一键部署脚本
 - `README.md` — 本文件
 

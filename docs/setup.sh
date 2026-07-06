@@ -47,16 +47,16 @@ if [ ! -f ".env" ]; then
     if [ -f ".env.example" ]; then
         cp .env.example .env
     else
-        echo "DEEPSEEK_API_KEY=your_key_here" > .env
+        echo "DEEPSEEK_API_KEY=sk-your-key-here" > .env
     fi
 fi
 
 # 检查 key 是否已填
-if grep -q "your_key_here" .env 2>/dev/null || grep -q "^DEEPSEEK_API_KEY=$" .env 2>/dev/null; then
+if grep -q "sk-your-key-here" .env 2>/dev/null || grep -q "^DEEPSEEK_API_KEY=$" .env 2>/dev/null; then
     echo ""
     echo "⚠️  请配置 DeepSeek API Key："
     echo "   1. 访问 https://platform.deepseek.com/api_keys 获取 key"
-    echo "   2. 编辑 .env 文件，将 DEEPSEEK_API_KEY=your_key_here 替换为真实 key"
+    echo "   2. 编辑 .env 文件，将 DEEPSEEK_API_KEY=sk-your-key-here 替换为真实 key"
     echo "   3. 重新运行本脚本"
     echo ""
     read -rp "→ 或直接在此输入 API Key（按 Enter 跳过，稍后手动编辑 .env）: " USER_KEY
@@ -78,7 +78,7 @@ echo ""
 echo "========================================"
 echo "  启动 Web 服务..."
 echo "  公网 URL 将在启动后显示"
-echo "  （形如 https://xxxxxxxxxxxx.gradio.live）"
+echo "  （公网域名，需自行配置内网穿透）"
 echo "========================================"
 echo ""
 

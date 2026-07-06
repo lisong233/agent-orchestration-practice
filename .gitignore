@@ -14,7 +14,6 @@ venv/
 
 # Env
 .env
-.env.example
 
 # Logs
 logs/

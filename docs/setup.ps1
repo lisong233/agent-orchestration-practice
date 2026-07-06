@@ -50,7 +50,7 @@ if (-not (Test-Path ".env")) {
     if (Test-Path ".env.example") {
         Copy-Item ".env.example" ".env"
     } else {
-        "DEEPSEEK_API_KEY=your_key_here" | Out-File -Encoding utf8 ".env"
+        "DEEPSEEK_API_KEY=sk-your-key-here" | Out-File -Encoding utf8 ".env"
     }
 }
 
@@ -77,7 +77,7 @@ Write-Host ""
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host "  启动 Web 服务..." -ForegroundColor Cyan
 Write-Host "  公网 URL 将在启动后显示" -ForegroundColor Cyan
-Write-Host "  （形如 https://xxxxxxxxxxxx.gradio.live）" -ForegroundColor Cyan
+Write-Host "  （公网域名，需自行配置内网穿透）" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 

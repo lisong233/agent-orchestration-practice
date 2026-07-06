@@ -48,7 +48,7 @@ S01 初探 ──→ S02 施工蓝图 + S02a 执行附录 ──执行──→ 
 ## 核心任务
 
 1. **规则发现**：从 19 个训练样本（通过 4 / 不通过 15）中自动发现审核规则
-2. **Agent 编排**：用 LangGraph StateGraph 编排 3 节点管线（parse→match→judge）
+2. **Agent 编排**：用 LangGraph StateGraph 编排 5 节点管线（sanitize→parse→match→judge→critic）
 3. **泛化能力**：正则判结构 + LLM 判语义，禁止训练集指纹
 
 ## 训练集（2026-06-24 最终）
@@ -76,18 +76,19 @@ S01 初探 ──→ S02 施工蓝图 + S02a 执行附录 ──执行──→ 
 - **SF6（14）**：重新保存后仅含封面页，正文缺失。
 - **计划任务书 doc 13/14**：文本层面与不通过文档无法区分（共用同一模板），纯规则引擎无法召回。
 
-## 当前状态（2026-07-05）
+## 当前状态（2026-07-06）
 
-S01 ✅ → S02 ✅ → S03 ✅ → S04 ✅ → S05 ✅ → v5.1 ✅ → **v5.1 闭环**
+S01 ✅ → S02 ✅ → S03 ✅ → S04 ✅ → S05 ✅ → v5.1 ✅ → **v6 闭环**
 
-### 闭环版本（2026-07-05）
+### 闭环版本（2026-07-06）
 
 **题目 100% 完成**（详见 `docs/design.md`）：
 
-- [x] 公网 URL：`https://fe41e1b5a3b9aa1bd0.gradio.live`（Gradio share 隧道，端到端验证通过）
-- [x] `docs/design.md`：系统设计文档（搬家到 docs/，回答题目 5 问 + 诚实基线 + 部署方案）
-- [x] `docs/setup.sh` / `docs/setup.ps1`：评委一键部署脚本（创建 venv → 安装依赖 → 配置 key → 启动）
+- [x] 公网 URL：`https://lisong.iepose.cn`（节点小宝内网穿透，域名固定）
+- [x] `docs/design.md`：系统设计文档（回答题目 5 问 + 诚实基线 + 部署方案）
+- [x] `docs/guide.md`：构建指南（面向技术人员，讲清系统设计与开发历程）
+- [x] `docs/nas-ops.md`：NAS 部署运维手册
+- [x] `docs/setup.sh` / `docs/setup.ps1`：评委一键部署脚本
+- [x] v6 新特性：多文档并发 + 翻页浏览 + 浅色主题 + 评委自定义 API Key
 - [x] 19/19 测试全绿（三条路 + 反指纹 + 合成样本 + intent 路由）
-- [x] `R07-公网访问方案.md`：公网调研 + 端到端验证
-- [x] 审计日志 (`logs/runs.jsonl`)：NAS 容器内 44 条真实 LLM 运行记录
 - [x] NAS Docker 部署：`restart: unless-stopped`，LibreOffice + DeepSeek LLM 全链路
