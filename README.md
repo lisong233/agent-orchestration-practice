@@ -6,7 +6,7 @@
 
 ## 公网访问
 
-**🔗 [https://a75f8f4f8381fb54f4.gradio.live](https://a75f8f4f8381fb54f4.gradio.live)**
+**🔗 [https://0a41ab70073cc78ba3.gradio.live](https://0a41ab70073cc78ba3.gradio.live)**
 
 > Gradio share 隧道，有效期约 1 周。容器重启后 URL 变更。
 

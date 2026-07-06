@@ -17,6 +17,8 @@ from src.aiarmy.io import to_text
 
 GLOBAL_CSS = """
 :root {
+  color-scheme: light;
+}
   --bg-page: #f5f5f5;
   --bg-surface: #ffffff;
   --bg-card: #f9fafb;
@@ -189,6 +191,21 @@ footer { display: none !important; }
 }
 .pulse-dot:nth-child(2) { animation-delay: 0.2s; }
 .pulse-dot:nth-child(3) { animation-delay: 0.4s; }
+
+/* ── 强制浅色：无视系统暗色主题 ── */
+@media (prefers-color-scheme: dark) {
+  body, .gradio-container, .gradio-container .block,
+  .gradio-container .panel, .gradio-container .group,
+  .gradio-container .form, .gradio-container .wrap {
+    background: var(--bg-page) !important;
+    color: var(--text-primary) !important;
+  }
+  .gradio-container input, .gradio-container textarea, .gradio-container select {
+    background: var(--bg-surface) !important;
+    color: var(--text-primary) !important;
+    border-color: var(--border) !important;
+  }
+}
 """
 
 
