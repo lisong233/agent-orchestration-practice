@@ -14,7 +14,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 # 复制源码
 COPY src/ src/
 COPY rules/ rules/
-COPY design.md README.md ./
 
 # 创建日志目录
 RUN mkdir -p logs
