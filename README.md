@@ -6,9 +6,9 @@
 
 ## 公网访问
 
-**🔗 [https://8de653300dea99cd22.gradio.live](https://8de653300dea99cd22.gradio.live)**
+**🔗 [https://lisong.iepose.cn](https://lisong.iepose.cn)**
 
-> Gradio share 隧道，有效期约 1 周。容器重启后 URL 变更。
+> 节点小宝内网穿透，域名固定不变。
 
 ## 快速开始
 
