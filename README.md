@@ -8,7 +8,7 @@
 
 **🔗 [https://lisong.iepose.cn](https://lisong.iepose.cn)**
 
-> 节点小宝内网穿透，域名固定不变。
+> 无密码每 IP 限 1 次，输入访问密码后无限制。
 
 ## 快速开始
 
