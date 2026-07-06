@@ -82,6 +82,6 @@ echo "  （公网域名，需自行配置内网穿透）"
 echo "========================================"
 echo ""
 
-python -m src.aiarmy.web
+python -m src.agent_orchestration.web
 
 # 脚本结束。Gradio 会保持运行，Ctrl+C 停止。

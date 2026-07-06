@@ -70,7 +70,7 @@ Gradio Web · 浅色主题 · 多文档并发 3 · 翻页浏览
 
 ## 交付物
 
-- `src/aiarmy/` — 运行时系统（sanitize/parse/match/judge/critic + llm + io + web + audit_log）
+- `src/agent_orchestration/` — 运行时系统（sanitize/parse/match/judge/critic + llm + io + web + audit_log）
 - `rules/` — 规则库（7 条 YAML，含 tier 分层标记）
 - `eval/backtest.py` — 完整评估脚本（混淆矩阵 + Precision/Recall/F1）
 - `tests/` — 三条路 / 反指纹 / 合成样本 / Intent 路由测试（19/19 全绿）

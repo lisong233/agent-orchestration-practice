@@ -81,4 +81,4 @@ Write-Host "  （公网域名，需自行配置内网穿透）" -ForegroundColor
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 
-python -m src.aiarmy.web
+python -m src.agent_orchestration.web

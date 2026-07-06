@@ -9,8 +9,8 @@ import json
 import time
 from collections import defaultdict
 
-from src.aiarmy.graph import run_sync_quiet
-from src.aiarmy.io import to_text
+from src.agent_orchestration.graph import run_sync_quiet
+from src.agent_orchestration.io import to_text
 
 # ═══════════════════════════════════════
 # 访问控制

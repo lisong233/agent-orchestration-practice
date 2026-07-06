@@ -195,5 +195,5 @@
 | 部署运维 | `docs/nas-ops.md` |
 | 每个开发阶段的上下文 | `docs/spec/S01-S05` + `docs/status/R02-R07` |
 | 7 条规则的具体定义 | `rules/立项申请书/*.yaml` + `rules/计划任务书/*.yaml` |
-| 管线实现 | `src/aiarmy/graph.py` |
-| 裁决逻辑实现 | `src/aiarmy/agents/judge.py` |
+| 管线实现 | `src/agent_orchestration/graph.py` |
+| 裁决逻辑实现 | `src/agent_orchestration/agents/judge.py` |

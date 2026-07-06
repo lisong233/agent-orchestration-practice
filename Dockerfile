@@ -23,4 +23,4 @@ RUN mkdir -p logs
 EXPOSE 7860
 
 # 启动 Web 服务
-CMD ["python", "-m", "src.aiarmy.web"]
+CMD ["python", "-m", "src.agent_orchestration.web"]

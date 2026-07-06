@@ -50,7 +50,7 @@ def detect_doc_type(text: str) -> str:
 
 async def run_evaluation(docs: list, use_llm: bool = False, verbose: bool = False):
     """运行全量回测"""
-    from src.aiarmy.graph import AuditPipeline
+    from src.agent_orchestration.graph import AuditPipeline
 
     pipeline = AuditPipeline(use_llm=use_llm)
 

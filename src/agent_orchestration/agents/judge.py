@@ -5,7 +5,7 @@ v5: 内容优先裁决（M1）—— C类（内容）主导label，A类（adviso
      B类（conditional）内容pass时降级为form_notes。
 注：judge 是纯确定性 tier 分层裁决，不调用 LLM（裁决逻辑在代码里，不在 prompt 里）。
 """
-from src.aiarmy.schemas import RuleVerdict, FinalResult
+from src.agent_orchestration.schemas import RuleVerdict, FinalResult
 
 
 def _tier(v: RuleVerdict) -> str:

@@ -8,7 +8,7 @@ import asyncio, json, os, sys, time
 from pathlib import Path
 
 sys.path.insert(0, "/app")
-from src.aiarmy.graph import AuditPipeline
+from src.agent_orchestration.graph import AuditPipeline
 
 BT = Path("/app/_backtest")
 labels = json.loads((BT / "labels.json").read_text(encoding="utf-8"))

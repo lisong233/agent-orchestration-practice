@@ -1,5 +1,7 @@
-# AI 军团 — Agent 编排作业
+# Agent 编排实践 — Agent Orchestration Practice
 
+> 📌 **2026-07-06 项目更名**：`AiArmy/` → `AgentOrchestrationPractice/`，`src/aiarmy/` → `src/agent_orchestration/`，`scripts/` → `eval/scripts/`。`docs/spec/` 和 `docs/status/` 中的旧路径是历史记录，不代表当前结构。
+>
 > 基于训练数据，构建多 Agent 编排系统：读取业务文档 → 发现隐含判断规则 → 输出审核结果 + 命中规则 + 判断依据
 
 ## docs 目录规范

@@ -11,14 +11,14 @@ from typing import Optional
 
 from langgraph.graph import StateGraph, END
 
-from src.aiarmy.schemas import PipelineState, DocFields, RuleVerdict, FinalResult
+from src.agent_orchestration.schemas import PipelineState, DocFields, RuleVerdict, FinalResult
 
 
 # ── 节点函数：agent run() 的薄包装 ──
 
 async def _sanitize_node(state: PipelineState) -> dict:
     """节点0：输入净化 — M2 抗注入（v5 新增）"""
-    from src.aiarmy.sanitize import sanitize
+    from src.agent_orchestration.sanitize import sanitize
     clean = sanitize(state.raw_text)
     if state.verbose and clean != state.raw_text:
         print(f"  [sanitize] ⚠️ 检测到疑似注入模式，已标记")
@@ -27,7 +27,7 @@ async def _sanitize_node(state: PipelineState) -> dict:
 
 async def _parse_node(state: PipelineState) -> dict:
     """节点1：文档解析 → DocFields"""
-    from src.aiarmy.agents.parse import run
+    from src.agent_orchestration.agents.parse import run
     fields = await run(
         state.raw_text, state.intent,
         use_llm=state.use_llm,
@@ -42,12 +42,12 @@ async def _match_node(state: PipelineState) -> dict:
     """节点2：规则匹配 → RuleVerdict[]
     v5: 若 critic_feedback 非空 → 定向重评点名规则，其余复用上轮结果。
     """
-    from src.aiarmy.agents.match import (
+    from src.agent_orchestration.agents.match import (
         run, load_rules, quick_check, _eval_content_quality, _eval_r07_multidim,
         R03_DIMENSIONS, R04_DIMENSIONS,
     )
-    from src.aiarmy.llm import chat_json
-    from src.aiarmy.schemas import RuleVerdict
+    from src.agent_orchestration.llm import chat_json
+    from src.agent_orchestration.schemas import RuleVerdict
 
     feedback = state.critic_feedback
     if feedback and state.verdicts:
@@ -105,7 +105,7 @@ async def _match_node(state: PipelineState) -> dict:
 
 async def _judge_node(state: PipelineState) -> dict:
     """节点3：汇总裁决 → FinalResult"""
-    from src.aiarmy.agents.judge import run
+    from src.agent_orchestration.agents.judge import run
     result = await run(state.verdicts, state.fields.title, state.intent,
                        use_llm=state.use_llm)
     if state.verbose:
@@ -115,7 +115,7 @@ async def _judge_node(state: PipelineState) -> dict:
 
 async def _critic_node(state: PipelineState) -> dict:
     """节点4：质量门 — 确定性 evidence 检查（v5 新增）"""
-    from src.aiarmy.agents.critic import run
+    from src.agent_orchestration.agents.critic import run
     result = await run(state)
     if state.verbose:
         ok = result.get("critic_ok", True)
@@ -199,7 +199,7 @@ class AuditPipeline:
 
         # 审计日志落盘（部署后唯一观测窗口）
         try:
-            from src.aiarmy.audit_log import log_run
+            from src.agent_orchestration.audit_log import log_run
             log_run({
                 "doc_type": final.doc_type.value if final.doc_type else "未知",
                 "title": final.fields.title if final.fields else "",
@@ -236,7 +236,7 @@ def run_sync_quiet(raw_text: str, intent: str = "综合评审", use_llm: bool = 
                    model: str | None = None) -> PipelineState:
     """同步入口（静默模式）— 供线程池并发使用，不打印日志。
     api_key/base_url/model 可选：评委自定义 LLM 配置，传入则覆写 .env 默认。"""
-    from src.aiarmy.llm import set_override, clear_override
+    from src.agent_orchestration.llm import set_override, clear_override
     if api_key:
         set_override(api_key=api_key, base_url=base_url, model=model)
     try:

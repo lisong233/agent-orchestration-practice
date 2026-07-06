@@ -20,7 +20,7 @@ from pathlib import Path
 
 # 确保 src 在 Python path 中
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from src.aiarmy.llm import chat_json, get_client
+from src.agent_orchestration.llm import chat_json, get_client
 
 BASE = Path(__file__).parent.parent
 TXT_DIR = BASE / "训练集" / "convert_text"

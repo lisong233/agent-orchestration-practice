@@ -10,9 +10,9 @@
 import yaml, re, glob
 from collections import Counter
 from pathlib import Path
-from src.aiarmy.schemas import DocFields, RuleVerdict
-from src.aiarmy.llm import chat_json
-from src.aiarmy.sanitize import wrap_for_llm
+from src.agent_orchestration.schemas import DocFields, RuleVerdict
+from src.agent_orchestration.llm import chat_json
+from src.agent_orchestration.sanitize import wrap_for_llm
 
 RULES_DIR = Path(__file__).parent.parent.parent.parent / "rules"
 

@@ -11,7 +11,7 @@ from pathlib import Path
 BASE = Path(__file__).parent.parent
 sys.path.insert(0, str(BASE))
 
-from src.aiarmy.graph import run_sync
+from src.agent_orchestration.graph import run_sync
 
 
 # ── 立项申请书完整模板（含审批 + 承诺书）──

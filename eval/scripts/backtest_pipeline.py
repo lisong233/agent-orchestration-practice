@@ -7,7 +7,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.aiarmy.graph import AuditPipeline
+from src.agent_orchestration.graph import AuditPipeline
 
 
 async def main():

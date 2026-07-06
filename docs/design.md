@@ -327,8 +327,8 @@ docker compose up -d --build
 ## 目录结构
 
 ```
-AiArmy/
-├── src/aiarmy/
+AgentOrchestrationPractice/
+├── src/agent_orchestration/
 │   ├── schemas.py      ← Pydantic 数据契约
 │   ├── llm.py          ← Anthropic SDK 封装（双后端）
 │   ├── io.py           ← 文档 I/O（.docx/.txt → 纯文本）

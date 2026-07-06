@@ -15,8 +15,8 @@ from pathlib import Path
 BASE = Path(__file__).parent.parent
 sys.path.insert(0, str(BASE))
 
-from src.aiarmy.graph import run_sync
-from src.aiarmy.io import to_text
+from src.agent_orchestration.graph import run_sync
+from src.agent_orchestration.io import to_text
 
 TXT_DIR = BASE / "训练集" / "convert_text"
 

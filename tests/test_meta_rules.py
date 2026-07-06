@@ -16,8 +16,8 @@ from pathlib import Path
 BASE = Path(__file__).parent.parent
 sys.path.insert(0, str(BASE))
 
-from src.aiarmy.graph import run_sync
-from src.aiarmy.sanitize import sanitize
+from src.agent_orchestration.graph import run_sync
+from src.agent_orchestration.sanitize import sanitize
 
 
 # ═══════════════════════════════════════════
@@ -212,7 +212,7 @@ def test_route2b_injection_neutralized():
 
 def test_empty_verdicts_guard():
     """空 verdicts → 不通过（R04 审计修复A）"""
-    from src.aiarmy.agents.judge import run as judge_run
+    from src.agent_orchestration.agents.judge import run as judge_run
     import asyncio
 
     result = asyncio.run(judge_run([], title="测试", use_llm=False))

@@ -7,7 +7,7 @@ from pathlib import Path
 BASE = Path(__file__).parent.parent
 sys.path.insert(0, str(BASE))
 
-from src.aiarmy.agents.match import _route_by_intent, load_rules
+from src.agent_orchestration.agents.match import _route_by_intent, load_rules
 
 
 def test_intent_routing():

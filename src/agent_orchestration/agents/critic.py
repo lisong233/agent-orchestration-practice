@@ -4,7 +4,7 @@
 三项检查全确定性、零额外 LLM 调用。
 """
 import re
-from src.aiarmy.schemas import PipelineState
+from src.agent_orchestration.schemas import PipelineState
 
 # evidence 最低字符数。正则规则的描述性 evidence（"签名缺失"/"模板残留"）
 # 通常较短，LLM evidence 会引用原文通常较长。6字以下才视为异常。
