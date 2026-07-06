@@ -6,8 +6,11 @@ LLM 客户端封装 — 统一使用 Anthropic Messages API。
   2. 否则 → claude + claude-haiku-4-5（Claude Code 自带 key）
 
 所有 agent 直接调 chat_json/chat_text，不自己判断后端——统一由此模块决定。
+
+运行时覆写：set_override() 可临时替换 API key / base_url / model，供 Web UI
+评委自定义 key 场景使用。clear_override() 恢复 .env 默认。
 """
-import os, json, re
+import os, json, re, threading
 from pathlib import Path
 from anthropic import Anthropic
 
@@ -39,11 +42,39 @@ if os.environ.get("DEEPSEEK_API_KEY"):
     _BACKEND = "deepseek"
     _MODEL = "deepseek-v4-flash"
 
+# ── 运行时覆写（线程安全，供 Web UI 评委自定义 key）──
+_override = threading.local()
+_override.api_key = None
+_override.base_url = None
+_override.model = None
+
+
+def set_override(api_key: str | None = None, base_url: str | None = None,
+                 model: str | None = None):
+    """设置当前线程的 LLM 配置覆写。下一次管线调用生效。"""
+    _override.api_key = api_key
+    _override.base_url = base_url
+    _override.model = model
+
+
+def clear_override():
+    """清除当前线程的覆写，恢复 .env 默认配置"""
+    _override.api_key = None
+    _override.base_url = None
+    _override.model = None
+
 
 def get_client(backend: str | None = None) -> Anthropic:
     """
-    获取 LLM 客户端。不传参则用模块级自动检测的后端。
+    获取 LLM 客户端。优先级：运行时覆写 > .env 默认。
     """
+    # 检查运行时覆写
+    if _override.api_key:
+        return Anthropic(
+            api_key=_override.api_key,
+            base_url=_override.base_url or "https://api.deepseek.com/anthropic",
+        )
+
     backend = backend or _BACKEND
     if backend == "deepseek":
         api_key = os.environ.get("DEEPSEEK_API_KEY")

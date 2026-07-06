@@ -563,8 +563,10 @@ def _state_to_result(state, filename: str, file_id: str, dataset_type: str,
     }
 
 
-async def process_batch(files, dataset_type: str, intent: str, use_llm: bool):
-    """多文档并发处理 → (state_dict, html, page_info, reason_md, json_str, progress_html)"""
+async def process_batch(files, dataset_type: str, intent: str, use_llm: bool,
+                       api_key: str = ""):
+    """多文档并发处理 → (state_dict, html, page_info, reason_md, json_str, progress_html)
+    api_key 可选：评委自定义 DeepSeek Key，留空使用 .env 默认。"""
     if files is None:
         return (
             {"results": [], "page": 0, "dataset_type": "", "intent": ""},
@@ -597,8 +599,9 @@ async def process_batch(files, dataset_type: str, intent: str, use_llm: bool):
                     })
 
                 loop = asyncio.get_running_loop()
+                key = api_key.strip() if api_key else None
                 state = await loop.run_in_executor(
-                    None, run_sync_quiet, raw_text, intent, use_llm, override
+                    None, run_sync_quiet, raw_text, intent, use_llm, override, key
                 )
                 elapsed = time.time() - t0
                 result = _state_to_result(
@@ -743,6 +746,13 @@ def build_ui():
                     placeholder="综合评审 / 判断创新程度 / 材料完整性审查",
                     value="综合评审",
                 )
+                with gr.Accordion("⚙️ API 设置", open=False):
+                    api_key_input = gr.Textbox(
+                        label="DeepSeek API Key",
+                        placeholder="sk-...（留空使用默认 Key）",
+                        type="password",
+                        info="评委可填入自己的 DeepSeek Key，留空则使用服务端默认配置",
+                    )
                 llm_toggle = gr.Checkbox(
                     label="LLM 深度分析",
                     value=True,
@@ -813,8 +823,8 @@ def build_ui():
 
         # 提交
         submit_btn.click(
-            fn=lambda f, dt, i, llm: asyncio.run(process_batch(f, dt, i, llm)),
-            inputs=[file_input, dataset_type, intent_input, llm_toggle],
+            fn=lambda f, dt, i, llm, key: asyncio.run(process_batch(f, dt, i, llm, key)),
+            inputs=[file_input, dataset_type, intent_input, llm_toggle, api_key_input],
             outputs=[batch_state, html_output, page_info, reason_output, json_output, progress_html],
         ).then(
             fn=lambda: (gr.update(visible=False), gr.update(visible=True)),
