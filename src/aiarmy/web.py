@@ -1,15 +1,45 @@
 """
 Gradio Web 界面 — 部署入口
-v8: 多文档并发 + 翻页浏览 + 浅色专业主题
+v8: 多文档并发 + 翻页浏览 + 浅色专业主题 + 访问控制
 """
 import os
 import gradio as gr
 import asyncio
 import json
 import time
+from collections import defaultdict
 
 from src.aiarmy.graph import run_sync_quiet
 from src.aiarmy.io import to_text
+
+# ═══════════════════════════════════════
+# 访问控制
+# ═══════════════════════════════════════
+
+_ACCESS_PASSWORD = "aiarmy2026-review"
+# IP 使用计数（重启清零）
+_ip_usage = defaultdict(int)
+_MAX_FREE_REQUESTS = 1
+
+
+def _check_access(ip: str | None, password: str) -> str:
+    """检查访问权限。返回 "" 表示通过，否则返回错误信息。"""
+    if not ip:
+        ip = "unknown"
+    if password == _ACCESS_PASSWORD:
+        return ""
+    count = _ip_usage[ip]
+    if count >= _MAX_FREE_REQUESTS:
+        return f"该 IP 已达免费使用上限（{_MAX_FREE_REQUESTS} 次）。请输入访问密码解锁。"
+    return ""
+
+
+def _record_usage(ip: str | None, password: str):
+    """记录一次使用"""
+    if not ip:
+        ip = "unknown"
+    if password != _ACCESS_PASSWORD:
+        _ip_usage[ip] += 1
 
 # ═══════════════════════════════════════
 # 全局 CSS — 浅色专业主题
@@ -564,9 +594,27 @@ def _state_to_result(state, filename: str, file_id: str, dataset_type: str,
 
 
 async def process_batch(files, dataset_type: str, intent: str, use_llm: bool,
-                       api_key: str = "", base_url: str = "", model: str = ""):
+                       api_key: str = "", base_url: str = "", model: str = "",
+                       password: str = "", request: gr.Request | None = None):
     """多文档并发处理 → (state_dict, html, page_info, reason_md, json_str, progress_html)
     api_key 可选：评委自定义 LLM 配置（key + url + model 三件套），留空使用 .env 默认。"""
+    # 访问控制
+    client_ip = request.client.host if request else None
+    access_error = _check_access(client_ip, password)
+    if access_error:
+        error_html = f"""
+        <div class="error-banner">
+          <span class="error-icon">!</span>
+          <div>
+            <div class="error-title">访问受限</div>
+            <div class="error-detail">{access_error}</div>
+          </div>
+        </div>"""
+        return (
+            {"results": [], "page": 0, "dataset_type": "", "intent": ""},
+            error_html, "", "", "{}", ""
+        )
+
     if files is None:
         return (
             {"results": [], "page": 0, "dataset_type": "", "intent": ""},
@@ -643,6 +691,9 @@ async def process_batch(files, dataset_type: str, intent: str, use_llm: bool,
             r["reason_md"] = f"## 错误\n\n{r['error']}"
             r["json_raw"] = json.dumps({"error": r["error"], "file": r["filename"]},
                                        ensure_ascii=False, indent=2)
+
+    # 记录访问
+    _record_usage(client_ip, password)
 
     state = {
         "results": results,
@@ -772,6 +823,11 @@ def build_ui():
                             visible=False,
                             scale=3,
                         )
+                    access_pwd = gr.Textbox(
+                        label="访问密码（可选）",
+                        placeholder="输入密码以解锁无限制使用",
+                        type="password",
+                    )
                     gr.Markdown("*填入 API Key 后须同时填写 Base URL 和模型；留空则使用服务端默认 DeepSeek 配置*")
                 llm_toggle = gr.Checkbox(
                     label="LLM 深度分析",
@@ -848,14 +904,16 @@ def build_ui():
             outputs=[model_custom],
         )
 
-        # 提交
+        # 提交（包装函数以支持 gr.Request）
+        def submit_handler(f, dt, i, llm, key, url, preset, custom, pwd, request: gr.Request):
+            model = custom if preset == "自定义..." else preset
+            return asyncio.run(process_batch(f, dt, i, llm, key, url, model, pwd, request))
+
         submit_btn.click(
-            fn=lambda f, dt, i, llm, key, url, preset, custom: asyncio.run(
-                process_batch(f, dt, i, llm, key, url,
-                              custom if preset == "自定义..." else preset)
-            ),
+            fn=submit_handler,
             inputs=[file_input, dataset_type, intent_input, llm_toggle,
-                    api_key_input, api_url_input, model_preset, model_custom],
+                    api_key_input, api_url_input, model_preset, model_custom,
+                    access_pwd],
             outputs=[batch_state, html_output, page_info, reason_output, json_output, progress_html],
         ).then(
             fn=lambda: (gr.update(visible=False), gr.update(visible=True)),
